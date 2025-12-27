@@ -1,8 +1,9 @@
 import logging
 import pandas as pd
 from aiogram import Bot, Dispatcher, executor, types
+import os
 
-TOKEN = "PASTE_YOUR_TOKEN_HERE"
+TOKEN = os.getenv("BOT_TOKEN")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -127,3 +128,4 @@ async def handle_surname(msg: types.Message):
 # ---------- СТАРТ ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
