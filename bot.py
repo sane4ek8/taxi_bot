@@ -1,38 +1,36 @@
 import json
-import os
-from datetime import datetime
-
+import datetime
 from aiogram import Bot, Dispatcher, executor, types
-from config import TOKEN, MANAGERS
+from config import TOKEN
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-DATA_FILE = "storage.json"
+STORAGE_FILE = "storage.json"
 
 
 # ---------- helpers ----------
 
-def current_day():
-    return datetime.now().strftime("%Y-%m-%d")
+def load_storage():
+    try:
+        with open(STORAGE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {"managers": [], "data": {}}
 
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def save_storage(storage):
+    with open(STORAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump(storage, f, ensure_ascii=False, indent=2)
 
 
 def is_manager(user_id: int) -> bool:
-    data = load_data()
-    managers = set(data.get("managers", [])) | MANAGERS
-    return user_id in managers
+    storage = load_storage()
+    return user_id in storage.get("managers", [])
+
+
+def today():
+    return datetime.date.today().isoformat()
 
 
 # ---------- commands ----------
@@ -40,8 +38,8 @@ def is_manager(user_id: int) -> bool:
 @dp.message_handler(commands=["start", "info"])
 async def info(msg: types.Message):
     text = (
-        "🤖 Бот працює\n\n"
-        "📌 Команди:\n"
+        "✅ Бот працює\n\n"
+        "Команди:\n"
         "/add — Додавання адреси\n"
         "/del — Видалення адреси\n"
         "/list — Список адрес\n"
@@ -57,44 +55,49 @@ async def info(msg: types.Message):
 @dp.message_handler(commands=["add"])
 async def add_address(msg: types.Message):
     if not is_manager(msg.from_user.id):
-        await msg.answer("⛔ Ти не менеджер")
+        return await msg.answer("⛔ У тебе немає прав")
+
+    await msg.answer(
+        "✍️ Введи адресу у форматі:\n"
+        "`Адреса | Зона`",
+        parse_mode="Markdown"
+    )
+
+
+@dp.message_handler(lambda m: "|" in m.text)
+async def save_address(msg: types.Message):
+    if not is_manager(msg.from_user.id):
         return
 
-    await msg.answer("✍️ Введи адресу одним повідомленням")
-    await AddAddress.waiting.set()
+    try:
+        address, zone = map(str.strip, msg.text.split("|", 1))
+    except:
+        return
 
+    storage = load_storage()
+    day = today()
 
-class AddAddress(types.states.StatesGroup):
-    waiting = types.states.State()
-
-
-@dp.message_handler(state=AddAddress.waiting)
-async def save_address(msg: types.Message, state):
-    day = current_day()
-    data = load_data()
-
-    data.setdefault(day, [])
-    data[day].append({
-        "address": msg.text
+    storage["data"].setdefault(day, [])
+    storage["data"][day].append({
+        "address": address,
+        "zone": zone
     })
 
-    save_data(data)
-    await state.finish()
+    save_storage(storage)
     await msg.answer("✅ Адресу додано")
 
 
 @dp.message_handler(commands=["list"])
 async def list_addresses(msg: types.Message):
-    day = current_day()
-    data = load_data()
+    storage = load_storage()
+    day = today()
 
-    if day not in data or not data[day]:
-        await msg.answer("📭 Список порожній")
-        return
+    if day not in storage["data"] or not storage["data"][day]:
+        return await msg.answer("📭 Список порожній")
 
     text = "📋 Адреси на сьогодні:\n\n"
-    for i, item in enumerate(data[day], 1):
-        text += f"{i}. {item['address']}\n"
+    for i, item in enumerate(storage["data"][day], 1):
+        text += f"{i}. {item['address']} — {item['zone']}\n"
 
     await msg.answer(text)
 
@@ -102,35 +105,36 @@ async def list_addresses(msg: types.Message):
 @dp.message_handler(commands=["del"])
 async def delete_address(msg: types.Message):
     if not is_manager(msg.from_user.id):
-        await msg.answer("⛔ Ти не менеджер")
+        return await msg.answer("⛔ У тебе немає прав")
+
+    storage = load_storage()
+    day = today()
+
+    if day not in storage["data"] or not storage["data"][day]:
+        return await msg.answer("📭 Немає що видаляти")
+
+    await msg.answer("✍️ Введи номер адреси для видалення")
+
+
+@dp.message_handler(lambda m: m.text.isdigit())
+async def confirm_delete(msg: types.Message):
+    if not is_manager(msg.from_user.id):
         return
 
-    await msg.answer("❌ Введи номер адреси зі списку")
-    await DeleteAddress.waiting.set()
+    storage = load_storage()
+    day = today()
 
+    idx = int(msg.text) - 1
 
-class DeleteAddress(types.states.StatesGroup):
-    waiting = types.states.State()
-
-
-@dp.message_handler(state=DeleteAddress.waiting)
-async def remove_address(msg: types.Message, state):
-    if not msg.text.isdigit():
-        await msg.answer("⚠️ Потрібно ввести номер")
+    if day not in storage["data"]:
         return
 
-    index = int(msg.text) - 1
-    day = current_day()
-    data = load_data()
+    if idx < 0 or idx >= len(storage["data"][day]):
+        return await msg.answer("❌ Невірний номер")
 
-    if day not in data or index >= len(data[day]):
-        await msg.answer("❌ Невірний номер")
-        return
+    removed = storage["data"][day].pop(idx)
+    save_storage(storage)
 
-    removed = data[day].pop(index)
-    save_data(data)
-
-    await state.finish()
     await msg.answer(f"🗑 Видалено: {removed['address']}")
 
 
@@ -138,72 +142,49 @@ async def remove_address(msg: types.Message, state):
 
 @dp.message_handler(commands=["add_Man"])
 async def add_manager(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        await msg.answer("⛔ Ти не менеджер")
-        return
+    if not is_manager(msg.from_user.id) and load_storage()["managers"]:
+        return await msg.answer("⛔ У тебе немає прав")
 
-    await msg.answer("👤 Введи Telegram ID менеджера")
-    await AddManager.waiting.set()
+    await msg.answer("✍️ Надішли Telegram ID менеджера")
 
 
-class AddManager(types.states.StatesGroup):
-    waiting = types.states.State()
-
-
-@dp.message_handler(state=AddManager.waiting)
-async def save_manager(msg: types.Message, state):
-    if not msg.text.isdigit():
-        await msg.answer("⚠️ ID має бути числом")
-        return
-
+@dp.message_handler(lambda m: m.text.isdigit())
+async def save_manager(msg: types.Message):
+    storage = load_storage()
     user_id = int(msg.text)
-    data = load_data()
 
-    data.setdefault("managers", [])
-    if user_id not in data["managers"]:
-        data["managers"].append(user_id)
-        save_data(data)
-        await msg.answer("✅ Менеджера додано")
-    else:
-        await msg.answer("ℹ️ Менеджер вже існує")
+    if user_id in storage["managers"]:
+        return await msg.answer("ℹ️ Менеджер вже існує")
 
-    await state.finish()
+    storage["managers"].append(user_id)
+    save_storage(storage)
+
+    await msg.answer("✅ Менеджера додано")
 
 
 @dp.message_handler(commands=["del_Man"])
 async def delete_manager(msg: types.Message):
     if not is_manager(msg.from_user.id):
-        await msg.answer("⛔ Ти не менеджер")
-        return
+        return await msg.answer("⛔ У тебе немає прав")
 
-    await msg.answer("❌ Введи Telegram ID менеджера")
-    await DeleteManager.waiting.set()
+    await msg.answer("✍️ Надішли Telegram ID менеджера для видалення")
 
 
-class DeleteManager(types.states.StatesGroup):
-    waiting = types.states.State()
-
-
-@dp.message_handler(state=DeleteManager.waiting)
-async def remove_manager(msg: types.Message, state):
-    if not msg.text.isdigit():
-        await msg.answer("⚠️ ID має бути числом")
-        return
-
+@dp.message_handler(lambda m: m.text.isdigit())
+async def remove_manager(msg: types.Message):
+    storage = load_storage()
     user_id = int(msg.text)
-    data = load_data()
 
-    if user_id in data.get("managers", []):
-        data["managers"].remove(user_id)
-        save_data(data)
-        await msg.answer("🗑 Менеджера видалено")
-    else:
-        await msg.answer("ℹ️ Менеджера не знайдено")
+    if user_id not in storage["managers"]:
+        return await msg.answer("❌ Такого менеджера немає")
 
-    await state.finish()
+    storage["managers"].remove(user_id)
+    save_storage(storage)
+
+    await msg.answer("🗑 Менеджера видалено")
 
 
-# ---------- run ----------
+# ---------- start ----------
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
