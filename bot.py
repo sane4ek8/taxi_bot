@@ -1,8 +1,9 @@
 import logging
 import pandas as pd
 from aiogram import Bot, Dispatcher, executor, types
+import os
 
-TOKEN = "BOT_TOKEN"
+TOKEN = os.getenv("BOT_TOKEN")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -107,3 +108,4 @@ async def show_list(message: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
