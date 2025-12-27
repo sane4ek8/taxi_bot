@@ -2,7 +2,7 @@ import json
 import os
 from aiogram import Bot, Dispatcher, executor, types
 
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
@@ -210,3 +210,4 @@ async def del_manager(msg: types.Message):
 # ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
