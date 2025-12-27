@@ -2,19 +2,14 @@ import json
 import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, executor, types
+
 from config import TOKEN, MANAGERS
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
 STORAGE = "storage.json"
-WAITING_FOR_ADDRESS = set()
-
-
-# ---------- helpers ----------
-
-def is_manager(user_id: int) -> bool:
-    return user_id in MANAGERS
+user_states = {}  # user_id -> "waiting_address"
 
 
 def current_day():
@@ -36,58 +31,35 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def detect_zone(address: str) -> str:
-    a = address.lower()
-
-    if "троєщ" in a:
-        return "4 зона (червона, лівий берег)"
-    if "лівобереж" in a or "дарниц" in a:
-        return "3 зона (зелена, лівий берег)"
-    if "оболон" in a or "мінськ" in a:
-        return "2 зона (синя, правий берег)"
-    return "1 зона (червона, правий берег)"
-
-
-# ---------- commands ----------
-
-@dp.message_handler(commands=["start", "info"])
-async def info(msg: types.Message):
-    await msg.answer(
-        "🚕 Бот таксі\n\n"
-        "/add — додати адресу\n"
-        "/list — список на сьогодні\n"
-        "/clear — очистити сьогоднішній список"
-    )
+def is_manager(user_id):
+    return user_id in MANAGERS
 
 
 @dp.message_handler(commands=["add"])
 async def add_cmd(msg: types.Message):
     if not is_manager(msg.from_user.id):
+        await msg.answer("⛔ Немає доступу")
         return
-
-    WAITING_FOR_ADDRESS.add(msg.from_user.id)
+    user_states[msg.from_user.id] = "waiting_address"
     await msg.answer("✍️ Введи адресу одним повідомленням")
 
 
-@dp.message_handler(lambda msg: msg.from_user.id in WAITING_FOR_ADDRESS)
+@dp.message_handler(lambda msg: user_states.get(msg.from_user.id) == "waiting_address")
 async def save_address(msg: types.Message):
-    user_id = msg.from_user.id
-    WAITING_FOR_ADDRESS.discard(user_id)
-
-    address = msg.text.strip()
-    zone = detect_zone(address)
     day = current_day()
-
     data = load_data()
-    data.setdefault(day, [])
+
+    if day not in data:
+        data[day] = []
+
     data[day].append({
-        "address": address,
-        "zone": zone
+        "address": msg.text
     })
 
     save_data(data)
+    user_states.pop(msg.from_user.id)
 
-    await msg.answer(f"✅ Додано:\n{address}\n📍 {zone}")
+    await msg.answer("✅ Адресу додано")
 
 
 @dp.message_handler(commands=["list"])
@@ -101,21 +73,18 @@ async def list_cmd(msg: types.Message):
 
     text = "📋 Адреси на сьогодні:\n\n"
     for i, item in enumerate(data[day], 1):
-        text += f"{i}. {item['address']} — {item['zone']}\n"
+        text += f"{i}. {item['address']}\n"
 
     await msg.answer(text)
 
 
-@dp.message_handler(commands=["clear"])
-async def clear_cmd(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        return
-
-    data = load_data()
-    data[current_day()] = []
-    save_data(data)
-
-    await msg.answer("🗑 Список очищено")
+@dp.message_handler(commands=["info"])
+async def info_cmd(msg: types.Message):
+    await msg.answer(
+        "/add — додати адресу\n"
+        "/list — список на сьогодні\n"
+        "/info — команди"
+    )
 
 
 if __name__ == "__main__":
