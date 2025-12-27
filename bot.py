@@ -1,18 +1,18 @@
-import os
-import json
+import logging
 import pandas as pd
 from aiogram import Bot, Dispatcher, executor, types
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = "BOT_TOKEN"
+
+logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-STORAGE = "storage.json"
-EXCEL_FILE = "people.xlsx"
+MANAGERS = set()          # зберігаєш як раніше
+PASSENGERS = {1: [], 2: [], 3: [], 4: []}
+PEOPLE = {}               # дані з Excel
 
-
-# ---------- ZONES ----------
 ZONES = {
     1: {"stations": [
         "героїв дніпра", "мінська", "оболонь", "почайна",
@@ -22,8 +22,7 @@ ZONES = {
         "академмістечко", "житомирська", "святошин", "нивки",
         "берестейська", "шулявська", "політехнічний інститут",
         "вокзальна", "університет", "театральна",
-        "хрещатик", "арсенальна", "дорогожичі",
-        "печерськ", "сирець"
+        "хрещатик", "арсенальна", "дорогожичі", "печерськ", "сирець"
     ]},
     2: {"stations": [
         "звіринецька", "деміївська", "голосіївська",
@@ -31,8 +30,7 @@ ZONES = {
     ]},
     3: {"stations": [
         "дніпро", "гідропарк", "лівобережна",
-        "дарниця", "чернігівська", "лісова",
-        "троєщина"
+        "дарниця", "чернігівська", "лісова", "троєщина"
     ]},
     4: {"stations": [
         "славутич", "осокорки", "позняки",
@@ -42,130 +40,69 @@ ZONES = {
 }
 
 
-def detect_zone(metro: str):
-    metro = metro.lower()
+def get_zone_by_station(station: str):
+    station = station.lower()
     for zone, data in ZONES.items():
-        if metro in data["stations"]:
+        if station in data["stations"]:
             return zone
     return None
 
 
-# ---------- STORAGE ----------
-def load_storage():
-    if not os.path.exists(STORAGE):
-        return {"managers": [], "today": []}
-    with open(STORAGE, "r", encoding="utf-8") as f:
-        return json.load(f)
+@dp.message_handler(content_types=types.ContentType.DOCUMENT)
+async def upload_excel(message: types.Message):
+    if not message.document.file_name.endswith(".xlsx"):
+        return
 
+    file = await bot.get_file(message.document.file_id)
+    await bot.download_file(file.file_path, "people.xlsx")
 
-def save_storage(data):
-    with open(STORAGE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    df = pd.read_excel("people.xlsx")
 
-
-def is_manager(uid):
-    return uid in load_storage()["managers"]
-
-
-# ---------- EXCEL ----------
-def load_people():
-    df = pd.read_excel(EXCEL_FILE)
-    people = {}
+    PEOPLE.clear()
     for _, row in df.iterrows():
-        surname = str(row["surname"]).strip().lower()
-        people[surname] = {
-            "address": str(row["address"]).strip(),
-            "metro": str(row["metro"]).strip().lower()
+        PEOPLE[row["surname"].lower()] = {
+            "address": row["address"],
+            "station": row["station"]
         }
-    return people
 
-
-PEOPLE = load_people()
-
-
-# ---------- COMMANDS ----------
-@dp.message_handler(commands=["start", "info"])
-async def info(msg: types.Message):
-    await msg.answer(
-        "🤖 Бот працює\n\n"
-        "Команди:\n"
-        "/add – додати людину (по прізвищу)\n"
-        "/list – список адрес по зонах\n"
-        "/add_Man – додати менеджера\n"
-        "/del_Man – видалити менеджера"
-    )
+    await message.answer("✅ Excel завантажено та оброблено")
 
 
 @dp.message_handler(commands=["add"])
-async def add_hint(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        return
-    await msg.answer("✍️ Введи прізвище (як в Excel)")
+async def add_person(message: types.Message):
+    surname = message.get_args().strip().lower()
 
-
-@dp.message_handler(lambda m: m.text.isalpha())
-async def add_by_surname(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        return
-
-    surname = msg.text.lower()
     if surname not in PEOPLE:
-        await msg.answer("❌ Такого прізвища немає в Excel")
+        await message.answer("❌ Прізвище не знайдено в Excel")
         return
 
-    person = PEOPLE[surname]
-    zone = detect_zone(person["metro"])
+    data = PEOPLE[surname]
+    zone = get_zone_by_station(data["station"])
+
     if not zone:
-        await msg.answer("❌ Не можу визначити зону по метро")
+        await message.answer("❌ Не можу визначити зону")
         return
 
-    data = load_storage()
-    data["today"].append({
-        "surname": surname.capitalize(),
-        "address": person["address"],
-        "metro": person["metro"],
-        "zone": zone
-    })
-    save_storage(data)
+    PASSENGERS[zone].append(
+        f"{surname.title()} — {data['address']} ({data['station']})"
+    )
 
-    await msg.answer(f"✅ Додано в зону {zone}")
+    await message.answer(f"✅ Додано в зону {zone}")
 
 
 @dp.message_handler(commands=["list"])
-async def list_today(msg: types.Message):
-    data = load_storage()
-    if not data["today"]:
-        await msg.answer("📭 Список порожній")
-        return
+async def show_list(message: types.Message):
+    text = "📋 Списки по зонах:\n\n"
+    for zone, people in PASSENGERS.items():
+        text += f"🚗 Зона {zone}:\n"
+        if people:
+            for p in people:
+                text += f" • {p}\n"
+        else:
+            text += " — порожньо\n"
+        text += "\n"
 
-    text = "📋 Адреси по зонах:\n\n"
-    for zone in range(1, 5):
-        items = [p for p in data["today"] if p["zone"] == zone]
-        if items:
-            text += f"🚗 Зона {zone}:\n"
-            for i, p in enumerate(items, 1):
-                text += f"{i}. {p['surname']} — {p['address']} ({p['metro']})\n"
-            text += "\n"
-
-    await msg.answer(text)
-
-
-@dp.message_handler(commands=["add_Man"])
-async def add_manager(msg: types.Message):
-    data = load_storage()
-    if msg.from_user.id not in data["managers"]:
-        data["managers"].append(msg.from_user.id)
-        save_storage(data)
-    await msg.answer("✅ Ти менеджер")
-
-
-@dp.message_handler(commands=["del_Man"])
-async def del_manager(msg: types.Message):
-    data = load_storage()
-    if msg.from_user.id in data["managers"]:
-        data["managers"].remove(msg.from_user.id)
-        save_storage(data)
-    await msg.answer("❌ Менеджера видалено")
+    await message.answer(text)
 
 
 if __name__ == "__main__":
