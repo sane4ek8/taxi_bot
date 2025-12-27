@@ -61,9 +61,9 @@ async def upload_excel(message: types.Message):
 
     PEOPLE.clear()
     for _, row in df.iterrows():
-        PEOPLE[row["surname"].lower()] = {
-            "address": row["address"],
-            "station": row["station"]
+        PEOPLE[row["Surname"].lower()] = {
+            "Address": row["Address"],
+            "Station": row["Station"]
         }
 
     await message.answer("✅ Excel завантажено та оброблено")
@@ -108,4 +108,5 @@ async def show_list(message: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
