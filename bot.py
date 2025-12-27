@@ -83,7 +83,7 @@ async def list_addresses(msg: types.Message):
     await msg.answer(text, parse_mode="Markdown")
 
 
-@dp.message_handler(commands=["add_Man"])
+@dp.message_handler(commands=["addMan"])
 async def add_manager(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return await msg.answer("⛔ Ти не менеджер")
@@ -108,7 +108,7 @@ async def add_manager(msg: types.Message):
         dp.message_handlers.unregister(save_manager)
 
 
-@dp.message_handler(commands=["del_Man"])
+@dp.message_handler(commands=["delMan"])
 async def del_manager(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return await msg.answer("⛔ Ти не менеджер")
@@ -135,4 +135,5 @@ async def del_manager(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
