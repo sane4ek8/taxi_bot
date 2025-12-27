@@ -58,6 +58,7 @@ METRO_ZONES = {
     "троєщина": 3,
 
     # Зона 4 — зелена, лівий берег
+    "славутич": 4,
     "позняки": 4,
     "осокорки": 4,
     "харківська": 4,
@@ -210,3 +211,4 @@ async def remove_manager(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp)
+
