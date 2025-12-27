@@ -1,146 +1,127 @@
 import json
-import os
 from datetime import datetime
-
 from aiogram import Bot, Dispatcher, executor, types
-from config import TOKEN, MANAGERS
+from config import TOKEN, STORAGE_FILE
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-STORAGE_FILE = "storage.json"
 
+# ---------- helpers ----------
 
-# ---------- utils ----------
-def load_data():
-    if not os.path.exists(STORAGE_FILE):
-        return {"addresses": {}, "managers": list(MANAGERS)}
+def load_storage():
     with open(STORAGE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_data(data):
+def save_storage(data):
     with open(STORAGE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def today():
+def current_day():
     return datetime.now().strftime("%Y-%m-%d")
 
 
 def is_manager(user_id: int) -> bool:
-    data = load_data()
-    return user_id in data["managers"]
+    storage = load_storage()
+    return user_id in storage.get("managers", [])
 
 
-# ---------- start ----------
+# ---------- commands ----------
+
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
-    await msg.answer("🤖 Бот працює")
+    await msg.answer("🚕 Бот працює\nКоманди: /add /list /addMan /delMan")
 
 
-# ---------- ADD ADDRESS ----------
+@dp.message_handler(commands=["list"])
+async def list_addresses(msg: types.Message):
+    storage = load_storage()
+    day = current_day()
+
+    if day not in storage["data"] or not storage["data"][day]:
+        await msg.answer("📭 Список порожній")
+        return
+
+    text = "📋 Адреси на сьогодні:\n\n"
+    for i, item in enumerate(storage["data"][day], 1):
+        text += f"{i}. {item}\n"
+
+    await msg.answer(text)
+
+
 @dp.message_handler(commands=["add"])
 async def add_address(msg: types.Message):
     if not is_manager(msg.from_user.id):
         await msg.answer("⛔ Ти не менеджер")
         return
 
-    await msg.answer("✍️ Напиши адресу одним повідомленням")
-
-    @dp.message_handler(lambda m: m.text and not m.text.startswith("/"))
-    async def save_address(m: types.Message):
-        data = load_data()
-        day = today()
-
-        if day not in data["addresses"]:
-            data["addresses"][day] = []
-
-        data["addresses"][day].append({
-            "address": m.text,
-            "added_by": m.from_user.id
-        })
-
-        save_data(data)
-        await m.answer("✅ Адресу додано")
-
-        dp.message_handlers.unregister(save_address)
+    await msg.answer("✍️ Надішли адресу одним повідомленням")
+    dp.register_message_handler(save_address, state=None, content_types=types.ContentTypes.TEXT)
 
 
-# ---------- LIST ----------
-@dp.message_handler(commands=["list"])
-async def list_addresses(msg: types.Message):
-    data = load_data()
-    day = today()
+async def save_address(msg: types.Message):
+    storage = load_storage()
+    day = current_day()
 
-    if day not in data["addresses"] or not data["addresses"][day]:
-        await msg.answer("📭 Список порожній")
-        return
+    storage["data"].setdefault(day, [])
+    storage["data"][day].append(msg.text)
 
-    text = "📋 Адреси на сьогодні:\n\n"
-    for i, item in enumerate(data["addresses"][day], 1):
-        text += f"{i}. {item['address']}\n"
-
-    await msg.answer(text)
+    save_storage(storage)
+    await msg.answer("✅ Адресу додано")
+    dp.message_handlers.unregister(save_address)
 
 
-# ---------- ADD MANAGER ----------
-@dp.message_handler(commands=["addman"])
+# ---------- managers ----------
+
+@dp.message_handler(commands=["addMan"])
 async def add_manager(msg: types.Message):
     if not is_manager(msg.from_user.id):
         await msg.answer("⛔ Ти не менеджер")
         return
 
-    await msg.answer("👤 Надішли ID користувача")
+    try:
+        new_id = int(msg.get_args())
+    except:
+        await msg.answer("❗ Використання: /addMan 123456789")
+        return
 
-    @dp.message_handler(lambda m: m.text.isdigit())
-    async def save_manager(m: types.Message):
-        user_id = int(m.text)
-        data = load_data()
+    storage = load_storage()
 
-        if user_id in data["managers"]:
-            await m.answer("ℹ️ Уже є менеджером")
-        else:
-            data["managers"].append(user_id)
-            save_data(data)
-            await m.answer("✅ Менеджера додано")
+    if new_id in storage["managers"]:
+        await msg.answer("ℹ️ Цей користувач вже менеджер")
+        return
 
-        dp.message_handlers.unregister(save_manager)
+    storage["managers"].append(new_id)
+    save_storage(storage)
+    await msg.answer("✅ Менеджера додано")
 
 
-# ---------- DELETE MANAGER ----------
-@dp.message_handler(commands=["delman"])
+@dp.message_handler(commands=["delMan"])
 async def del_manager(msg: types.Message):
     if not is_manager(msg.from_user.id):
         await msg.answer("⛔ Ти не менеджер")
         return
 
-    await msg.answer("❌ Надішли ID менеджера для видалення")
+    try:
+        rem_id = int(msg.get_args())
+    except:
+        await msg.answer("❗ Використання: /delMan 123456789")
+        return
 
-    @dp.message_handler(lambda m: m.text.isdigit())
-    async def remove_manager(m: types.Message):
-        user_id = int(m.text)
-        data = load_data()
+    storage = load_storage()
 
-        if user_id not in data["managers"]:
-            await m.answer("ℹ️ Такого менеджера немає")
-        else:
-            data["managers"].remove(user_id)
-            save_data(data)
-            await m.answer("🗑 Менеджера видалено")
+    if rem_id not in storage["managers"]:
+        await msg.answer("ℹ️ Цей користувач не менеджер")
+        return
 
-        dp.message_handlers.unregister(remove_manager)
+    storage["managers"].remove(rem_id)
+    save_storage(storage)
+    await msg.answer("🗑 Менеджера видалено")
 
 
-# ---------- LIST MANAGERS ----------
-@dp.message_handler(commands=["managers"])
-async def list_managers(msg: types.Message):
-    data = load_data()
-    text = "👥 Менеджери:\n\n"
-    for m in data["managers"]:
-        text += f"- `{m}`\n"
-    await msg.answer(text, parse_mode="Markdown")
-
+# ---------- run ----------
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
