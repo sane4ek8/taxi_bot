@@ -1,6 +1,6 @@
-import json
 import os
-import re
+import json
+import pandas as pd
 from aiogram import Bot, Dispatcher, executor, types
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -8,29 +8,11 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-DATA_FILE = "data.json"
-MAN_FILE = "managers.json"
+STORAGE = "storage.json"
+EXCEL_FILE = "people.xlsx"
 
 
-# ---------- utils ----------
-def load_json(path, default):
-    if not os.path.exists(path):
-        return default
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def is_manager(user_id):
-    managers = load_json(MAN_FILE, [])
-    return user_id in managers
-
-
-# ---------- zones ----------
+# ---------- ZONES ----------
 ZONES = {
     1: {"stations": [
         "героїв дніпра", "мінська", "оболонь", "почайна",
@@ -40,11 +22,12 @@ ZONES = {
         "академмістечко", "житомирська", "святошин", "нивки",
         "берестейська", "шулявська", "політехнічний інститут",
         "вокзальна", "університет", "театральна",
-        "хрещатик", "арсенальна", "дорогожичі", "печерськ", "сирець"
+        "хрещатик", "арсенальна", "дорогожичі",
+        "печерськ", "сирець"
     ]},
     2: {"stations": [
-        "звіринецька", "деміївська", "голосіївська", "васильківська",
-        "ВДНХ", "іподром", "теремки"
+        "звіринецька", "деміївська", "голосіївська",
+        "васильківська", "вднх", "іподром", "теремки"
     ]},
     3: {"stations": [
         "дніпро", "гідропарк", "лівобережна",
@@ -59,26 +42,57 @@ ZONES = {
 }
 
 
-def detect_zone(station):
-    s = station.lower()
+def detect_zone(metro: str):
+    metro = metro.lower()
     for zone, data in ZONES.items():
-        if s in data["stations"]:
+        if metro in data["stations"]:
             return zone
     return None
 
 
-# ---------- commands ----------
+# ---------- STORAGE ----------
+def load_storage():
+    if not os.path.exists(STORAGE):
+        return {"managers": [], "today": []}
+    with open(STORAGE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_storage(data):
+    with open(STORAGE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def is_manager(uid):
+    return uid in load_storage()["managers"]
+
+
+# ---------- EXCEL ----------
+def load_people():
+    df = pd.read_excel(EXCEL_FILE)
+    people = {}
+    for _, row in df.iterrows():
+        surname = str(row["surname"]).strip().lower()
+        people[surname] = {
+            "address": str(row["address"]).strip(),
+            "metro": str(row["metro"]).strip().lower()
+        }
+    return people
+
+
+PEOPLE = load_people()
+
+
+# ---------- COMMANDS ----------
 @dp.message_handler(commands=["start", "info"])
 async def info(msg: types.Message):
     await msg.answer(
         "🤖 Бот працює\n\n"
         "Команди:\n"
-        "/add — Додавання адреси\n"
-        "/del — Видалення адреси\n"
-        "/list — Список адрес\n"
-        "/add_Man — Додати менеджера\n"
-        "/del_Man — Видалити менеджера\n"
-        "/info — Список команд"
+        "/add – додати людину (по прізвищу)\n"
+        "/list – список адрес по зонах\n"
+        "/add_Man – додати менеджера\n"
+        "/del_Man – видалити менеджера"
     )
 
 
@@ -86,76 +100,73 @@ async def info(msg: types.Message):
 async def add_hint(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return
-    await msg.answer(
-        "✍️ Введи адресу у форматі:\n"
-        "Імʼя - адреса (станція метро)\n\n"
-        "Приклад:\n"
-        "Головко - проспект Петра Григоренка 14 (Позняки)"
-    )
+    await msg.answer("✍️ Введи прізвище (як в Excel)")
 
 
-@dp.message_handler(lambda m: "-" in m.text and "(" in m.text and ")" in m.text)
-async def handle_add(msg: types.Message):
+@dp.message_handler(lambda m: m.text.isalpha())
+async def add_by_surname(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return
 
-    try:
-        name, rest = msg.text.split("-", 1)
-        address, station = re.findall(r"(.*)\((.*)\)", rest)[0]
-    except:
-        await msg.answer("❌ Невірний формат")
+    surname = msg.text.lower()
+    if surname not in PEOPLE:
+        await msg.answer("❌ Такого прізвища немає в Excel")
         return
 
-    zone = detect_zone(station.strip())
+    person = PEOPLE[surname]
+    zone = detect_zone(person["metro"])
     if not zone:
-        await msg.answer("❌ Не зміг визначити зону за станцією метро")
+        await msg.answer("❌ Не можу визначити зону по метро")
         return
 
-    data = load_json(DATA_FILE, {})
-    data.setdefault(str(zone), []).append({
-        "name": name.strip(),
-        "address": address.strip(),
-        "station": station.strip()
+    data = load_storage()
+    data["today"].append({
+        "surname": surname.capitalize(),
+        "address": person["address"],
+        "metro": person["metro"],
+        "zone": zone
     })
-    save_json(DATA_FILE, data)
+    save_storage(data)
 
-    await msg.answer(f"✅ Додано до зони {zone}")
+    await msg.answer(f"✅ Додано в зону {zone}")
 
 
 @dp.message_handler(commands=["list"])
-async def list_addresses(msg: types.Message):
-    data = load_json(DATA_FILE, {})
-    if not data:
+async def list_today(msg: types.Message):
+    data = load_storage()
+    if not data["today"]:
         await msg.answer("📭 Список порожній")
         return
 
-    text = ""
-    for zone in sorted(data, key=int):
-        text += f"\n🚗 Зона {zone}:\n"
-        for i, item in enumerate(data[zone], 1):
-            text += f"{i}. {item['name']} — {item['address']} ({item['station']})\n"
+    text = "📋 Адреси по зонах:\n\n"
+    for zone in range(1, 5):
+        items = [p for p in data["today"] if p["zone"] == zone]
+        if items:
+            text += f"🚗 Зона {zone}:\n"
+            for i, p in enumerate(items, 1):
+                text += f"{i}. {p['surname']} — {p['address']} ({p['metro']})\n"
+            text += "\n"
 
     await msg.answer(text)
 
 
 @dp.message_handler(commands=["add_Man"])
 async def add_manager(msg: types.Message):
-    managers = load_json(MAN_FILE, [])
-    managers.append(msg.from_user.id)
-    save_json(MAN_FILE, list(set(managers)))
-    await msg.answer("✅ Ти доданий як менеджер")
+    data = load_storage()
+    if msg.from_user.id not in data["managers"]:
+        data["managers"].append(msg.from_user.id)
+        save_storage(data)
+    await msg.answer("✅ Ти менеджер")
 
 
 @dp.message_handler(commands=["del_Man"])
 async def del_manager(msg: types.Message):
-    managers = load_json(MAN_FILE, [])
-    if msg.from_user.id in managers:
-        managers.remove(msg.from_user.id)
-        save_json(MAN_FILE, managers)
+    data = load_storage()
+    if msg.from_user.id in data["managers"]:
+        data["managers"].remove(msg.from_user.id)
+        save_storage(data)
     await msg.answer("❌ Менеджера видалено")
 
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
-
-
