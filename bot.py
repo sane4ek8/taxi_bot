@@ -1,131 +1,156 @@
-import logging
-import pandas as pd
-from aiogram import Bot, Dispatcher, executor, types
 import os
+import json
+import asyncio
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+from openpyxl import load_workbook
 
 TOKEN = os.getenv("BOT_TOKEN")
-
-logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# ---------- ЗОНИ ----------
+MAN_FILE = "managers.json"
+ADDR_FILE = "addresses.json"
+EXCEL_FILE = "data.xlsx"
+
+user_state = {}
+
 ZONES = {
-    1: [
-        "героїв дніпра", "мінська", "оболонь", "почайна",
-        "тарса шевченка", "контрактова площа", "поштова площа",
-        "майдан незалежності", "площа українських героїв",
-        "олімпійська", "палац україна", "либідська",
-        "академмістечко", "житомирська", "святошин", "нивки",
-        "берестейська", "шулявська", "політехнічний інститут",
-        "вокзальна", "університет", "театральна",
-        "хрещатик", "арсенальна", "дорогожичі", "печерськ", "сирець"
-    ],
-    2: [
-        "звіринецька", "деміївська", "голосіївська",
-        "васильківська", "вднх", "іподром", "теремки"
-    ],
-    3: [
-        "дніпро", "гідропарк", "лівобережна",
-        "дарниця", "чернігівська", "лісова", "троєщина"
-    ],
-    4: [
-        "славутич", "осокорки", "позняки",
-        "харківська", "вирлиця", "бориспільська", "червоний хутір"
-    ]
+    1: ["героїв дніпра","мінська","оболонь","почайна","тарса шевченка",
+        "контрактова площа","поштова площа","майдан незалежності",
+        "площа українських героїв","олімпійська","палац україна",
+        "либідська","академмістечко","житомирська","святошин","нивки",
+        "берестейська","шулявська","політехнічний інститут",
+        "вокзальна","університет","театральна","хрещатик",
+        "арсенальна","дорогожичі","печерськ","сирець"],
+
+    2: ["звіринецька","деміївська","голосіївська",
+        "васильківська","вднх","іподром","теремки"],
+
+    3: ["дніпро","гідропарк","лівобережна",
+        "дарниця","чернігівська","лісова","троєщина"],
+
+    4: ["славутич","осокорки","позняки",
+        "харківська","вирлиця",
+        "бориспільська","червоний хутір"]
 }
 
-# ---------- СТАН ----------
-waiting_for_surname = set()
-cars = {1: [], 2: [], 3: [], 4: []}
+def load_json(file, default):
+    if not os.path.exists(file):
+        return default
+    with open(file, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-# ---------- ДОП ФУНКЦІЇ ----------
-def get_zone_by_metro(metro: str):
-    metro = metro.lower().strip()
-    for zone, stations in ZONES.items():
-        if metro in stations:
-            return zone
+def save_json(file, data):
+    with open(file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def is_manager(user_id):
+    return str(user_id) in load_json(MAN_FILE, [])
+
+def get_zone(station):
+    station = station.lower().strip()
+    for z, sts in ZONES.items():
+        if station in sts:
+            return z
     return None
 
-# ---------- КОМАНДИ ----------
-@dp.message_handler(commands=["start"])
-async def start(msg: types.Message):
+def find_person(surname):
+    wb = load_workbook(EXCEL_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row[0] and row[0].lower() == surname.lower():
+            return {
+                "surname": row[0],
+                "address": row[1],
+                "station": row[2],
+                "zone": get_zone(row[2])
+            }
+    return None
+
+@dp.message_handler(commands=["start","info"])
+async def info(msg: types.Message):
     await msg.answer(
-        "🚕 Бот таксі\n\n"
-        "/add — додати людину (вводиться ТІЛЬКИ прізвище)\n"
-        "/list — показати машини\n"
-        "/clear — очистити список"
+        "Бот працює\n\n"
+        "/add — додати пасажира\n"
+        "/del — видалити пасажира\n"
+        "/list — список по зонах\n"
+        "/add_Man — додати менеджера\n"
+        "/del_Man — видалити менеджера"
     )
 
 @dp.message_handler(commands=["add"])
-async def add(msg: types.Message):
-    waiting_for_surname.add(msg.from_user.id)
-    await msg.answer("Введи прізвище (як в Excel):")
+async def add_cmd(msg: types.Message):
+    if not is_manager(msg.from_user.id):
+        return await msg.answer("❌ Ти не менеджер")
+    user_state[msg.from_user.id] = "wait_surname"
+    await msg.answer("Введи **прізвище** наступним повідомленням")
 
-@dp.message_handler(commands=["list"])
-async def show_list(msg: types.Message):
-    text = "🚕 Розподіл по машинах:\n\n"
-    for zone, people in cars.items():
-        text += f"Зона {zone}:\n"
-        if people:
-            for p in people:
-                text += f"• {p}\n"
-        else:
-            text += "— порожньо\n"
-        text += "\n"
-    await msg.answer(text)
-
-@dp.message_handler(commands=["clear"])
-async def clear(msg: types.Message):
-    for z in cars:
-        cars[z].clear()
-    await msg.answer("🧹 Список очищено")
-
-# ---------- ОБРОБКА ПРІЗВИЩА ----------
 @dp.message_handler()
-async def handle_surname(msg: types.Message):
-    if msg.from_user.id not in waiting_for_surname:
+async def handle_text(msg: types.Message):
+    uid = msg.from_user.id
+    if user_state.get(uid) != "wait_surname":
         return
 
-    waiting_for_surname.remove(msg.from_user.id)
+    person = find_person(msg.text.strip())
+    if not person:
+        return await msg.answer("❌ Прізвище не знайдено в Excel")
 
-    surname_input = msg.text.strip().lower()
+    data = load_json(ADDR_FILE, [])
+    data.append(person)
+    save_json(ADDR_FILE, data)
 
-    try:
-        df = pd.read_excel("people.xlsx")
-    except Exception as e:
-        await msg.answer("❌ Не можу відкрити Excel")
-        return
-
-    df["surname"] = df["surname"].astype(str).str.lower().str.strip()
-
-    person = df[df["surname"] == surname_input]
-
-    if person.empty:
-        await msg.answer("❌ Прізвище не знайдено в Excel")
-        return
-
-    row = person.iloc[0]
-    metro = str(row["metro"]).lower().strip()
-    address = str(row["address"])
-
-    zone = get_zone_by_metro(metro)
-
-    if not zone:
-        await msg.answer(f"❌ Станція «{metro}» не входить в жодну зону")
-        return
-
-    cars[zone].append(f"{row['surname']} — {address} ({metro})")
-
+    user_state.pop(uid)
     await msg.answer(
-        f"✅ Додано\n"
-        f"👤 {row['surname']}\n"
-        f"🚇 {metro}\n"
-        f"🟦 Зона {zone}"
+        f"✅ Додано:\n{person['surname']}\n"
+        f"{person['address']}\n"
+        f"Метро: {person['station']}\n"
+        f"Зона: {person['zone']}"
     )
 
-# ---------- СТАРТ ----------
-if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+@dp.message_handler(commands=["list"])
+async def list_cmd(msg: types.Message):
+    data = load_json(ADDR_FILE, [])
+    if not data:
+        return await msg.answer("Список порожній")
 
+    text = ""
+    for z in range(1,5):
+        group = [d for d in data if d["zone"] == z]
+        if group:
+            text += f"\n🚕 Зона {z}:\n"
+            for p in group:
+                text += f"- {p['surname']} | {p['address']}\n"
+    await msg.answer(text)
+
+@dp.message_handler(commands=["del"])
+async def del_cmd(msg: types.Message):
+    if not is_manager(msg.from_user.id):
+        return
+    user_state[msg.from_user.id] = "del"
+    await msg.answer("Введи прізвище для видалення")
+
+@dp.message_handler(commands=["add_Man"])
+async def add_man(msg: types.Message):
+    ids = load_json(MAN_FILE, [])
+    parts = msg.text.split()
+    if len(parts) != 2:
+        return await msg.answer("/add_Man ID")
+    ids.append(parts[1])
+    save_json(MAN_FILE, ids)
+    await msg.answer("✅ Менеджер доданий")
+
+@dp.message_handler(commands=["del_Man"])
+async def del_man(msg: types.Message):
+    ids = load_json(MAN_FILE, [])
+    parts = msg.text.split()
+    if len(parts) != 2:
+        return await msg.answer("/del_Man ID")
+    if parts[1] in ids:
+        ids.remove(parts[1])
+        save_json(MAN_FILE, ids)
+    await msg.answer("✅ Менеджер видалений")
+
+if __name__ == "__main__":
+    executor.start_polling(dp)
