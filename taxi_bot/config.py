@@ -1,4 +1,6 @@
-TOKEN = "8244830685:AAE5W_f8WMS-ASylvQkf1Bcc5zk5NaU7URk"
+import os
+
+TOKEN = os.getenv("8244830685:AAE5W_f8WMS-ASylvQkf1Bcc5zk5NaU7URk")
 
 # Telegram ID менеджерів
 MANAGERS = {
@@ -11,4 +13,5 @@ MANAGERS = {
    512302542,
    544344074,
    536710479
+
 }
