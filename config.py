@@ -2,18 +2,4 @@ import os
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Telegram ID менеджерів
-MANAGERS = {
-   430185827,
-   254666996,
-   398150821,
-   381342966,
-   1027636339,
-   1265927510,
-   687420231,
-   512302542,
-   544344074,
-   536710479
-}
-
-
+STORAGE_FILE = "storage.json"
