@@ -1,41 +1,83 @@
 import json
-import datetime
+import os
 from aiogram import Bot, Dispatcher, executor, types
-from config import TOKEN
+
+TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-STORAGE_FILE = "storage.json"
+STORAGE = "storage.json"
 
 
-# ---------- helpers ----------
+# ---------- utils ----------
 
-def load_storage():
-    try:
-        with open(STORAGE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {"managers": [], "data": {}}
-
-
-def save_storage(storage):
-    with open(STORAGE_FILE, "w", encoding="utf-8") as f:
-        json.dump(storage, f, ensure_ascii=False, indent=2)
+def load_data():
+    if not os.path.exists(STORAGE):
+        return {"addresses": [], "managers": []}
+    with open(STORAGE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def is_manager(user_id: int) -> bool:
-    storage = load_storage()
-    return user_id in storage.get("managers", [])
+def save_data(data):
+    with open(STORAGE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def today():
-    return datetime.date.today().isoformat()
+def is_manager(user_id):
+    data = load_data()
+    return user_id in data["managers"]
+
+
+# ---------- metro → zones ----------
+
+METRO_ZONES = {
+    # Зона 1 — червона, правий берег
+    "академмістечко": 1,
+    "житомирська": 1,
+    "святошин": 1,
+    "нивки": 1,
+    "берестейська": 1,
+    "шулявська": 1,
+    "політехнічний інститут": 1,
+    "вокзальна": 1,
+
+    # Зона 2 — синя, правий берег
+    "героїв дніпра": 2,
+    "мінська": 2,
+    "оболонь": 2,
+    "почайна": 2,
+    "контрактова площа": 2,
+    "поштова площа": 2,
+
+    # Зона 3 — червона, лівий берег
+    "дарниця": 3,
+    "лівобережна": 3,
+    "чернігівська": 3,
+    "лісова": 3,
+    "троєщина": 3,
+
+    # Зона 4 — зелена, лівий берег
+    "позняки": 4,
+    "осокорки": 4,
+    "харківська": 4,
+    "вирлиця": 4,
+    "бориспільська": 4,
+    "червоний хутір": 4,
+}
+
+
+def detect_zone(address: str):
+    address = address.lower()
+    for station, zone in METRO_ZONES.items():
+        if station in address:
+            return zone
+    return "❓ Невідома зона"
 
 
 # ---------- commands ----------
 
-@dp.message_handler(commands=["start", "info"])
+@dp.message_handler(commands=["info", "start"])
 async def info(msg: types.Message):
     text = (
         "✅ Бот працює\n\n"
@@ -50,54 +92,47 @@ async def info(msg: types.Message):
     await msg.answer(text)
 
 
-# ---------- addresses ----------
-
 @dp.message_handler(commands=["add"])
 async def add_address(msg: types.Message):
     if not is_manager(msg.from_user.id):
-        return await msg.answer("⛔ У тебе немає прав")
+        await msg.answer("❌ Ви не менеджер")
+        return
 
-    await msg.answer(
-        "✍️ Введи адресу у форматі:\n"
-        "`Адреса | Зона`",
-        parse_mode="Markdown"
-    )
+    await msg.answer("✍️ Введи у форматі:\nІмʼя, адреса")
 
 
-@dp.message_handler(lambda m: "|" in m.text)
+@dp.message_handler(lambda m: "," in m.text and is_manager(m.from_user.id))
 async def save_address(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        return
+    name, address = map(str.strip, msg.text.split(",", 1))
+    zone = detect_zone(address)
 
-    try:
-        address, zone = map(str.strip, msg.text.split("|", 1))
-    except:
-        return
-
-    storage = load_storage()
-    day = today()
-
-    storage["data"].setdefault(day, [])
-    storage["data"][day].append({
+    data = load_data()
+    data["addresses"].append({
+        "name": name,
         "address": address,
         "zone": zone
     })
+    save_data(data)
 
-    save_storage(storage)
-    await msg.answer("✅ Адресу додано")
+    await msg.answer(f"✅ Додано\n🚗 Зона: {zone}")
 
 
 @dp.message_handler(commands=["list"])
 async def list_addresses(msg: types.Message):
-    storage = load_storage()
-    day = today()
+    data = load_data()
+    if not data["addresses"]:
+        await msg.answer("📭 Список порожній")
+        return
 
-    if day not in storage["data"] or not storage["data"][day]:
-        return await msg.answer("📭 Список порожній")
+    grouped = {}
+    for item in data["addresses"]:
+        grouped.setdefault(item["zone"], []).append(item)
 
-    text = "📋 Адреси на сьогодні:\n\n"
-    for i, item in enumerate(storage["data"][day], 1):
-        text += f"{i}. {item['address']} — {item['zone']}\n"
+    text = ""
+    for zone, items in grouped.items():
+        text += f"\n🚗 Машина — Зона {zone}\n"
+        for i, a in enumerate(items, 1):
+            text += f"{i}. {a['name']} — {a['address']}\n"
 
     await msg.answer(text)
 
@@ -105,86 +140,73 @@ async def list_addresses(msg: types.Message):
 @dp.message_handler(commands=["del"])
 async def delete_address(msg: types.Message):
     if not is_manager(msg.from_user.id):
-        return await msg.answer("⛔ У тебе немає прав")
-
-    storage = load_storage()
-    day = today()
-
-    if day not in storage["data"] or not storage["data"][day]:
-        return await msg.answer("📭 Немає що видаляти")
-
-    await msg.answer("✍️ Введи номер адреси для видалення")
-
-
-@dp.message_handler(lambda m: m.text.isdigit())
-async def confirm_delete(msg: types.Message):
-    if not is_manager(msg.from_user.id):
         return
 
-    storage = load_storage()
-    day = today()
+    data = load_data()
+    if not data["addresses"]:
+        await msg.answer("Список порожній")
+        return
 
+    text = "Введи номер адреси:\n"
+    for i, a in enumerate(data["addresses"], 1):
+        text += f"{i}. {a['name']} — {a['address']}\n"
+
+    await msg.answer(text)
+    dp.register_message_handler(confirm_delete, state=None)
+
+
+async def confirm_delete(msg: types.Message):
+    if not msg.text.isdigit():
+        return
     idx = int(msg.text) - 1
 
-    if day not in storage["data"]:
-        return
+    data = load_data()
+    if 0 <= idx < len(data["addresses"]):
+        removed = data["addresses"].pop(idx)
+        save_data(data)
+        await msg.answer(f"🗑 Видалено: {removed['name']}")
 
-    if idx < 0 or idx >= len(storage["data"][day]):
-        return await msg.answer("❌ Невірний номер")
-
-    removed = storage["data"][day].pop(idx)
-    save_storage(storage)
-
-    await msg.answer(f"🗑 Видалено: {removed['address']}")
-
-
-# ---------- managers ----------
 
 @dp.message_handler(commands=["add_Man"])
 async def add_manager(msg: types.Message):
-    if not is_manager(msg.from_user.id) and load_storage()["managers"]:
-        return await msg.answer("⛔ У тебе немає прав")
+    data = load_data()
+    if msg.from_user.id not in data["managers"] and data["managers"]:
+        await msg.answer("❌ Тільки менеджер може додавати інших")
+        return
 
-    await msg.answer("✍️ Надішли Telegram ID менеджера")
+    await msg.answer("Введи Telegram ID менеджера")
 
 
 @dp.message_handler(lambda m: m.text.isdigit())
 async def save_manager(msg: types.Message):
-    storage = load_storage()
-    user_id = int(msg.text)
+    data = load_data()
+    uid = int(msg.text)
 
-    if user_id in storage["managers"]:
-        return await msg.answer("ℹ️ Менеджер вже існує")
-
-    storage["managers"].append(user_id)
-    save_storage(storage)
-
-    await msg.answer("✅ Менеджера додано")
+    if uid not in data["managers"]:
+        data["managers"].append(uid)
+        save_data(data)
+        await msg.answer("✅ Менеджера додано")
 
 
 @dp.message_handler(commands=["del_Man"])
-async def delete_manager(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        return await msg.answer("⛔ У тебе немає прав")
-
-    await msg.answer("✍️ Надішли Telegram ID менеджера для видалення")
+async def del_manager(msg: types.Message):
+    data = load_data()
+    await msg.answer("Введи Telegram ID для видалення")
 
 
-@dp.message_handler(lambda m: m.text.isdigit())
+@dp.message_handler()
 async def remove_manager(msg: types.Message):
-    storage = load_storage()
-    user_id = int(msg.text)
+    if not msg.text.isdigit():
+        return
 
-    if user_id not in storage["managers"]:
-        return await msg.answer("❌ Такого менеджера немає")
+    uid = int(msg.text)
+    data = load_data()
 
-    storage["managers"].remove(user_id)
-    save_storage(storage)
+    if uid in data["managers"]:
+        data["managers"].remove(uid)
+        save_data(data)
+        await msg.answer("🗑 Менеджера видалено")
 
-    await msg.answer("🗑 Менеджера видалено")
-
-
-# ---------- start ----------
 
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp)
