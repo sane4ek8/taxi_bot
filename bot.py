@@ -7,8 +7,8 @@ from config import TOKEN, MANAGERS
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-STORAGE_FILE = "storage.json"
-user_states = {}  # хто зараз вводить адресу
+STORAGE = "storage.json"
+WAITING_FOR_ADDRESS = set()
 
 
 # ---------- helpers ----------
@@ -17,24 +17,35 @@ def is_manager(user_id: int) -> bool:
     return user_id in MANAGERS
 
 
-def current_day() -> str:
+def current_day():
     now = datetime.now()
-    # новий день з 02:00
     if now.hour < 2:
         now = now.replace(day=now.day - 1)
     return now.strftime("%Y-%m-%d")
 
 
 def load_data():
-    if not os.path.exists(STORAGE_FILE):
+    if not os.path.exists(STORAGE):
         return {}
-    with open(STORAGE_FILE, "r", encoding="utf-8") as f:
+    with open(STORAGE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_data(data):
-    with open(STORAGE_FILE, "w", encoding="utf-8") as f:
+    with open(STORAGE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def detect_zone(address: str) -> str:
+    a = address.lower()
+
+    if "троєщ" in a:
+        return "4 зона (червона, лівий берег)"
+    if "лівобереж" in a or "дарниц" in a:
+        return "3 зона (зелена, лівий берег)"
+    if "оболон" in a or "мінськ" in a:
+        return "2 зона (синя, правий берег)"
+    return "1 зона (червона, правий берег)"
 
 
 # ---------- commands ----------
@@ -42,10 +53,10 @@ def save_data(data):
 @dp.message_handler(commands=["start", "info"])
 async def info(msg: types.Message):
     await msg.answer(
-        "🤖 Бот для формування таксі\n\n"
+        "🚕 Бот таксі\n\n"
         "/add — додати адресу\n"
-        "/list — показати список\n"
-        "/clear — очистити список (менеджери)"
+        "/list — список на сьогодні\n"
+        "/clear — очистити сьогоднішній список"
     )
 
 
@@ -54,8 +65,29 @@ async def add_cmd(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return
 
-    user_states[msg.from_user.id] = "waiting_address"
-    await msg.answer("✍️ Надішли адресу ОДНИМ повідомленням")
+    WAITING_FOR_ADDRESS.add(msg.from_user.id)
+    await msg.answer("✍️ Введи адресу одним повідомленням")
+
+
+@dp.message_handler(lambda msg: msg.from_user.id in WAITING_FOR_ADDRESS)
+async def save_address(msg: types.Message):
+    user_id = msg.from_user.id
+    WAITING_FOR_ADDRESS.discard(user_id)
+
+    address = msg.text.strip()
+    zone = detect_zone(address)
+    day = current_day()
+
+    data = load_data()
+    data.setdefault(day, [])
+    data[day].append({
+        "address": address,
+        "zone": zone
+    })
+
+    save_data(data)
+
+    await msg.answer(f"✅ Додано:\n{address}\n📍 {zone}")
 
 
 @dp.message_handler(commands=["list"])
@@ -63,13 +95,13 @@ async def list_cmd(msg: types.Message):
     day = current_day()
     data = load_data()
 
-    if day not in data or len(data[day]) == 0:
+    if day not in data or not data[day]:
         await msg.answer("📭 Список порожній")
         return
 
-    text = f"📋 Адреси на {day}:\n\n"
+    text = "📋 Адреси на сьогодні:\n\n"
     for i, item in enumerate(data[day], 1):
-        text += f"{i}. {item['address']}\n"
+        text += f"{i}. {item['address']} — {item['zone']}\n"
 
     await msg.answer(text)
 
@@ -80,40 +112,11 @@ async def clear_cmd(msg: types.Message):
         return
 
     data = load_data()
-    day = current_day()
-    data[day] = []
+    data[current_day()] = []
     save_data(data)
 
-    await msg.answer("🧹 Список очищено")
+    await msg.answer("🗑 Список очищено")
 
-
-# ---------- address input ----------
-
-@dp.message_handler()
-async def handle_text(msg: types.Message):
-    uid = msg.from_user.id
-
-    if user_states.get(uid) != "waiting_address":
-        return
-
-    address = msg.text.strip()
-    day = current_day()
-    data = load_data()
-
-    if day not in data:
-        data[day] = []
-
-    data[day].append({
-        "address": address
-    })
-
-    save_data(data)
-    user_states.pop(uid)
-
-    await msg.answer(f"✅ Адресу додано:\n{address}")
-
-
-# ---------- start ----------
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
