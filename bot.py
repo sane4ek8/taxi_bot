@@ -41,8 +41,8 @@ async def info(msg: types.Message):
         "Команди:\n"
         "/add — Додавання адреси\n"
         "/list — Список адрес\n"
-        "/add_Man — Додавання менеджера\n"
-        "/del_Man — Видалення менеджера\n"
+        "/addMan — Додавання менеджера\n"
+        "/delMan — Видалення менеджера\n"
         "/info — Список команд"
     )
     await msg.answer(text, parse_mode="Markdown")
@@ -135,3 +135,4 @@ async def del_manager(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
