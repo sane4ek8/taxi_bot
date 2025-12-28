@@ -15,6 +15,7 @@ dp = Dispatcher(bot)
 waiting_for_add = set()
 waiting_for_del = set()
 waiting_for_add_manager = set()
+waiting_for_del_man = set()
 
 # ---------- utils ----------
 import shutil
@@ -268,10 +269,32 @@ async def handle_add_manager(msg: types.Message):
     await msg.answer(f"✅ Менеджера {new_manager_id} додано")
 
 @dp.message_handler(commands=["del_Man"])
-async def del_manager(msg: types.Message):
+async def del_man_start(msg: types.Message):
     if not await check_manager(msg):
         return
+    waiting_for_del_man.add(msg.from_user.id)
+    await msg.answer("🗑 Введи telegram ID менеджера для видалення")
 
+@dp.message_handler(lambda m: m.from_user.id in waiting_for_del_man)
+async def del_man_process(msg: types.Message):
+    waiting_for_del_man.discard(msg.from_user.id)
+
+    if not msg.text.isdigit():
+        await msg.answer("❌ Потрібно ввести числовий telegram ID")
+        return
+
+    manager_id = int(msg.text)
+    managers = load_json(MANAGERS_FILE, [])
+
+    if manager_id not in managers:
+        await msg.answer("❌ Цього ID немає серед менеджерів")
+        return
+
+    managers.remove(manager_id)
+    save_json(MANAGERS_FILE, managers)
+
+    await msg.answer(f"🗑 Менеджера {manager_id} видалено")
+    
     args = msg.get_args()
     if not args.isdigit():
         await msg.answer("❌ Використання: /del_Man <telegram_id>")
@@ -302,6 +325,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
