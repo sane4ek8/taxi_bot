@@ -98,11 +98,24 @@ async def handle_add(msg: types.Message):
     taxi = load_json(TAXI_STORAGE, {})
 
     surnames = [s.strip().lower() for s in msg.text.split(",") if s.strip()]
-    added, not_found = [], []
+
+    # 🔹 всі прізвища, які вже є в таксі
+    existing = set()
+    for zone_people in taxi.values():
+        for p in zone_people:
+            existing.add(p["surname"].lower())
+
+    added = []
+    not_found = []
+    duplicates = []
 
     for s in surnames:
         if s not in people:
             not_found.append(s)
+            continue
+
+        if s in existing:
+            duplicates.append(people[s]["surname"])
             continue
 
         person = people[s]
@@ -111,6 +124,7 @@ async def handle_add(msg: types.Message):
             continue
 
         taxi.setdefault(str(zone), []).append(person)
+        existing.add(s)
         added.append(person["surname"])
 
     save_json(TAXI_STORAGE, taxi)
@@ -118,10 +132,13 @@ async def handle_add(msg: types.Message):
     text = ""
     if added:
         text += "✅ Додано:\n" + ", ".join(added) + "\n\n"
+    if duplicates:
+        text += "⚠️ Уже в таксі:\n" + ", ".join(duplicates) + "\n\n"
     if not_found:
         text += "❌ Не знайдено:\n" + ", ".join(not_found)
 
     await msg.answer(text.strip())
+
 
 # ---------- DEL ----------
 @dp.message_handler(commands=["del"])
@@ -206,6 +223,7 @@ async def del_manager(msg: types.Message):
 # ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
