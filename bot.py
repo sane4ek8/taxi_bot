@@ -51,7 +51,6 @@ ZONES = {
     3: {"stations": [
         "дніпро", "гідропарк", "лівобережна",
         "дарниця", "чернігівська", "лісова",
-        "троєщина"
     ]},
     4: {"stations": [
         "славутич", "осокорки", "позняки",
@@ -199,4 +198,5 @@ async def del_manager(msg: types.Message):
 # ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
