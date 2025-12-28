@@ -1,20 +1,19 @@
 import json
 import os
 from aiogram import Bot, Dispatcher, executor, types
-import pandas as pd
+from config import (
+    TOKEN,
+    PEOPLE_STORAGE,
+    TAXI_STORAGE,
+    MANAGERS_FILE,
+    MAX_IN_CAR
+)
 
-TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-DATA_FILE = "data.json"
-MAN_FILE = "managers.json"
-PEOPLE_FILE = "people.xlsx"
-
-waiting_for_surname = set()
-waiting_for_delete = set()
-
-MAX_IN_CAR = 4
+waiting_for_add = set()
+waiting_for_del = set()
 
 # ---------- utils ----------
 def load_json(path, default):
@@ -28,7 +27,7 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def is_manager(user_id):
-    managers = load_json(MAN_FILE, [])
+    managers = load_json(MANAGERS_FILE, [])
     return user_id in managers
 
 # ---------- zones ----------
@@ -69,16 +68,16 @@ def detect_zone(station):
             return zone
     return None
 
-# ---------- commands ----------
+# ---------- INFO ----------
 @dp.message_handler(commands=["start", "info"])
 async def info(msg: types.Message):
     await msg.answer(
         "🤖 Бот працює\n\n"
         "Команди:\n"
-        "/add — Додати людей\n"
-        "/del — Видалити людей\n"
-        "/list — Всі люди з Excel\n"
-        "/taxi — Список по зонах + машини\n"
+        "/add — Додати людей у таксі\n"
+        "/del — Видалити людей з таксі\n"
+        "/list — Всі люди (storage)\n"
+        "/taxi — Таксі по зонах\n"
         "/add_Man — Додати менеджера\n"
         "/del_Man — Видалити менеджера"
     )
@@ -88,40 +87,33 @@ async def info(msg: types.Message):
 async def add_start(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return
-    waiting_for_surname.add(msg.from_user.id)
-    await msg.answer("✍️ Введи прізвища з Excel (можна через кому)")
+    waiting_for_add.add(msg.from_user.id)
+    await msg.answer("✍️ Введи прізвища (через кому)")
 
-@dp.message_handler(lambda m: m.from_user.id in waiting_for_surname)
+@dp.message_handler(lambda m: m.from_user.id in waiting_for_add)
 async def handle_add(msg: types.Message):
-    waiting_for_surname.discard(msg.from_user.id)
+    waiting_for_add.discard(msg.from_user.id)
 
-    df = pd.read_excel(PEOPLE_FILE)
-    df["surname"] = df["surname"].astype(str).str.lower()
+    people = load_json(PEOPLE_STORAGE, {})
+    taxi = load_json(TAXI_STORAGE, {})
 
     surnames = [s.strip().lower() for s in msg.text.split(",") if s.strip()]
-    data = load_json(DATA_FILE, {})
-
     added, not_found = [], []
 
-    for surname in surnames:
-        row = df[df["surname"] == surname]
-        if row.empty:
-            not_found.append(surname)
+    for s in surnames:
+        if s not in people:
+            not_found.append(s)
             continue
 
-        person = row.iloc[0]
-        zone = detect_zone(str(person["station"]))
+        person = people[s]
+        zone = detect_zone(person["station"])
         if not zone:
             continue
 
-        data.setdefault(str(zone), []).append({
-            "name": person["surname"],
-            "address": person["address"],
-            "station": person["station"]
-        })
+        taxi.setdefault(str(zone), []).append(person)
         added.append(person["surname"])
 
-    save_json(DATA_FILE, data)
+    save_json(TAXI_STORAGE, taxi)
 
     text = ""
     if added:
@@ -136,82 +128,79 @@ async def handle_add(msg: types.Message):
 async def del_start(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return
-    waiting_for_delete.add(msg.from_user.id)
+    waiting_for_del.add(msg.from_user.id)
     await msg.answer("🗑 Введи прізвища для видалення (через кому)")
 
-@dp.message_handler(lambda m: m.from_user.id in waiting_for_delete)
+@dp.message_handler(lambda m: m.from_user.id in waiting_for_del)
 async def handle_del(msg: types.Message):
-    waiting_for_delete.discard(msg.from_user.id)
+    waiting_for_del.discard(msg.from_user.id)
 
     surnames = [s.strip().lower() for s in msg.text.split(",") if s.strip()]
-    data = load_json(DATA_FILE, {})
-
+    taxi = load_json(TAXI_STORAGE, {})
     removed = []
 
-    for zone in list(data.keys()):
-        data[zone] = [
-            p for p in data[zone]
-            if not (p["name"].lower() in surnames and removed.append(p["name"]) is None)
+    for zone in list(taxi.keys()):
+        taxi[zone] = [
+            p for p in taxi[zone]
+            if not (p["surname"].lower() in surnames and removed.append(p["surname"]) is None)
         ]
-        if not data[zone]:
-            del data[zone]
+        if not taxi[zone]:
+            del taxi[zone]
 
-    save_json(DATA_FILE, data)
+    save_json(TAXI_STORAGE, taxi)
 
     if removed:
         await msg.answer("🗑 Видалено:\n" + ", ".join(set(removed)))
     else:
         await msg.answer("❌ Нікого не знайдено")
 
-# ---------- NEW LIST (EXCEL) ----------
+# ---------- LIST STORAGE ----------
 @dp.message_handler(commands=["list"])
-async def list_excel(msg: types.Message):
-    if not os.path.exists(PEOPLE_FILE):
-        await msg.answer("❌ Файл people.xlsx не знайдено")
+async def list_people(msg: types.Message):
+    people = load_json(PEOPLE_STORAGE, {})
+    if not people:
+        await msg.answer("📭 Сторейж порожній")
         return
 
-    df = pd.read_excel(PEOPLE_FILE)
-
-    text = "📋 Всі люди з Excel:\n\n"
-    for i, row in df.iterrows():
-        text += f"{i+1}. {row['surname']} — {row['address']} ({row['station']})\n"
+    text = "📋 Всі люди:\n\n"
+    for i, p in enumerate(people.values(), 1):
+        text += f"{i}. {p['surname']} — {p['address']} ({p['station']})\n"
 
     await msg.answer(text)
 
-# ---------- TAXI (OLD LIST) ----------
+# ---------- TAXI ----------
 @dp.message_handler(commands=["taxi"])
-async def list_taxi(msg: types.Message):
-    data = load_json(DATA_FILE, {})
-    if not data:
-        await msg.answer("📭 Список порожній")
+async def taxi_list(msg: types.Message):
+    taxi = load_json(TAXI_STORAGE, {})
+    if not taxi:
+        await msg.answer("📭 Таксі порожнє")
         return
 
     text = ""
-    for zone in sorted(data, key=int):
+    for zone in sorted(taxi, key=int):
         text += f"\n🚦 Зона {zone}\n"
-        people = data[zone]
-
+        people = taxi[zone]
         for i in range(0, len(people), MAX_IN_CAR):
             text += f"🚗 Машина {(i // MAX_IN_CAR) + 1}\n"
             for j, p in enumerate(people[i:i + MAX_IN_CAR], 1):
-                text += f"{j}. {p['name']} — {p['address']} ({p['station']})\n"
+                text += f"{j}. {p['surname']} — {p['address']} ({p['station']})\n"
 
     await msg.answer(text)
 
 # ---------- MANAGERS ----------
 @dp.message_handler(commands=["add_Man"])
 async def add_manager(msg: types.Message):
-    managers = load_json(MAN_FILE, [])
+    managers = load_json(MANAGERS_FILE, [])
     managers.append(msg.from_user.id)
-    save_json(MAN_FILE, list(set(managers)))
+    save_json(MANAGERS_FILE, list(set(managers)))
     await msg.answer("✅ Ти менеджер")
 
 @dp.message_handler(commands=["del_Man"])
 async def del_manager(msg: types.Message):
-    managers = load_json(MAN_FILE, [])
+    managers = load_json(MANAGERS_FILE, [])
     if msg.from_user.id in managers:
         managers.remove(msg.from_user.id)
-        save_json(MAN_FILE, managers)
+        save_json(MANAGERS_FILE, managers)
     await msg.answer("❌ Менеджера видалено")
 
 # ---------- RUN ----------
