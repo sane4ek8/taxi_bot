@@ -7,6 +7,7 @@ from config import (
     TAXI_STORAGE,
     MANAGERS_FILE,
     MAX_IN_CAR
+    SUPER_ADMIN_ID
 )
 
 bot = Bot(token=TOKEN)
@@ -19,6 +20,9 @@ waiting_for_del_man = set()
 
 # ---------- utils ----------
 import shutil
+
+def is_super_admin(user_id: int) -> bool:
+    return user_id == SUPER_ADMIN_ID
 
 def load_json(path, default):
     if not os.path.exists(path):
@@ -35,7 +39,7 @@ def is_manager(user_id):
     return user_id in managers
 
 async def check_manager(msg: types.Message) -> bool:
-    if not is_manager(msg.from_user.id):
+    if not (is_manager(msg.from_user.id) or is_super_admin(msg.from_user.id)):
         await msg.answer("⛔ У тебе немає прав")
         return False
     return True
@@ -243,18 +247,21 @@ async def taxi_list(msg: types.Message):
 # ---------- MANAGERS ----------
 
 @dp.message_handler(commands=["add_Man"])
-async def add_manager_start(msg: types.Message):
-    if not await check_manager(msg):
+async def add_man_start(msg: types.Message):
+    if not is_super_admin(msg.from_user.id):
+        await msg.answer("⛔ Тільки супер-адмін може керувати менеджерами")
         return
+
     waiting_for_add_manager.add(msg.from_user.id)
-    await msg.answer("✍️ Введи telegram_id менеджера")
+    await msg.answer("✍️ Введи telegram ID нового менеджера")
+
 
 @dp.message_handler(lambda m: m.from_user.id in waiting_for_add_manager)
-async def handle_add_manager(msg: types.Message):
+async def add_man_process(msg: types.Message):
     waiting_for_add_manager.discard(msg.from_user.id)
 
     if not msg.text.isdigit():
-        await msg.answer("❌ Потрібно ввести лише цифри (telegram_id)")
+        await msg.answer("❌ Потрібно ввести числовий telegram ID")
         return
 
     new_manager_id = int(msg.text)
@@ -268,16 +275,20 @@ async def handle_add_manager(msg: types.Message):
     save_json(MANAGERS_FILE, managers)
     await msg.answer(f"✅ Менеджера {new_manager_id} додано")
 
+
 @dp.message_handler(commands=["del_Man"])
 async def del_man_start(msg: types.Message):
-    if not await check_manager(msg):
+    if not is_super_admin(msg.from_user.id):
+        await msg.answer("⛔ Тільки супер-адмін може керувати менеджерами")
         return
-    waiting_for_del_man.add(msg.from_user.id)
+
+    waiting_for_del_manager.add(msg.from_user.id)
     await msg.answer("🗑 Введи telegram ID менеджера для видалення")
 
-@dp.message_handler(lambda m: m.from_user.id in waiting_for_del_man)
+
+@dp.message_handler(lambda m: m.from_user.id in waiting_for_del_manager)
 async def del_man_process(msg: types.Message):
-    waiting_for_del_man.discard(msg.from_user.id)
+    waiting_for_del_manager.discard(msg.from_user.id)
 
     if not msg.text.isdigit():
         await msg.answer("❌ Потрібно ввести числовий telegram ID")
@@ -288,23 +299,6 @@ async def del_man_process(msg: types.Message):
 
     if manager_id not in managers:
         await msg.answer("❌ Цього ID немає серед менеджерів")
-        return
-
-    managers.remove(manager_id)
-    save_json(MANAGERS_FILE, managers)
-
-    await msg.answer(f"🗑 Менеджера {manager_id} видалено")
-    
-    args = msg.get_args()
-    if not args.isdigit():
-        await msg.answer("❌ Використання: /del_Man <telegram_id>")
-        return
-
-    manager_id = int(args)
-    managers = load_json(MANAGERS_FILE, [])
-
-    if manager_id not in managers:
-        await msg.answer("❌ Цього айді немає серед менеджерів")
         return
 
     managers.remove(manager_id)
@@ -325,6 +319,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
