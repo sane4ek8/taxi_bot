@@ -11,3 +11,4 @@ MANAGERS_FILE = f"{DATA_DIR}/managers.json"
 
 MAX_IN_CAR = 4
 
+SUPER_ADMIN_ID = 430185827
