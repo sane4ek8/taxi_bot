@@ -1,5 +1,9 @@
 import os
 
-TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-STORAGE_FILE = "storage.json"
+DATA_FILE = "storage.json"
+PEOPLE_STORAGE = "people_storage.json"
+MAN_FILE = "managers.json"
+
+MAX_IN_CAR = 4
