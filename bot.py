@@ -16,6 +16,7 @@ waiting_for_add = set()
 waiting_for_del = set()
 
 # ---------- utils ----------
+
 def load_json(path, default):
     if not os.path.exists(path):
         return default
@@ -37,6 +38,7 @@ async def check_manager(msg: types.Message) -> bool:
     return True
 
 # ---------- zones ----------
+    
 ZONES = {
     1: {"stations": [
         "академмістечко", "житомирська", "святошин", "нивки",
@@ -75,6 +77,7 @@ def detect_zone(station):
     return None
 
 # ---------- INFO ----------
+
 @dp.message_handler(commands=["start", "info"])
 async def info(msg: types.Message):
     await msg.answer(
@@ -91,6 +94,7 @@ async def info(msg: types.Message):
 
 
 # ---------- ADD ----------
+
 @dp.message_handler(commands=["add"])
 async def add_start(msg: types.Message):
     if not await check_manager(msg):
@@ -149,6 +153,7 @@ async def handle_add(msg: types.Message):
 
 
 # ---------- DEL ----------
+
 @dp.message_handler(commands=["del"])
 async def del_start(msg: types.Message):
     if not await check_manager(msg):
@@ -180,6 +185,7 @@ async def handle_del(msg: types.Message):
         await msg.answer("❌ Нікого не знайдено")
 
 # ---------- LIST STORAGE ----------
+
 @dp.message_handler(commands=["list"])
 async def list_people(msg: types.Message):
     people = load_json(PEOPLE_STORAGE, {})
@@ -194,6 +200,7 @@ async def list_people(msg: types.Message):
     await msg.answer(text)
 
 # ---------- TAXI ----------
+
 @dp.message_handler(commands=["taxi"])
 async def taxi_list(msg: types.Message):
     taxi = load_json(TAXI_STORAGE, {})
@@ -213,10 +220,10 @@ async def taxi_list(msg: types.Message):
     await msg.answer(text)
 
 # ---------- MANAGERS ----------
+
 @dp.message_handler(commands=["add_Man"])
 async def add_manager(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        await msg.answer("⛔ У тебе немає прав")
+    if not await check_manager(msg):
         return
 
     args = msg.get_args()
@@ -225,7 +232,6 @@ async def add_manager(msg: types.Message):
         return
 
     new_manager_id = int(args)
-
     managers = load_json(MANAGERS_FILE, [])
 
     if new_manager_id in managers:
@@ -234,14 +240,12 @@ async def add_manager(msg: types.Message):
 
     managers.append(new_manager_id)
     save_json(MANAGERS_FILE, managers)
-
     await msg.answer(f"✅ Менеджера {new_manager_id} додано")
 
 
 @dp.message_handler(commands=["del_Man"])
 async def del_manager(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        await msg.answer("⛔ У тебе немає прав")
+    if not await check_manager(msg):
         return
 
     args = msg.get_args()
@@ -258,21 +262,23 @@ async def del_manager(msg: types.Message):
 
     managers.remove(manager_id)
     save_json(MANAGERS_FILE, managers)
-
     await msg.answer(f"🗑 Менеджера {manager_id} видалено")
 
 # ---------- CLEAR TAXI ----------
+
 @dp.message_handler(commands=["clear"])
 async def clear_taxi(msg: types.Message):
-    if not is_manager(msg.from_user.id):
+    if not await check_manager(msg):
         return
 
     save_json(TAXI_STORAGE, {})
     await msg.answer("🧹 Список поїздки очищено")
 
 # ---------- RUN ----------
+
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
