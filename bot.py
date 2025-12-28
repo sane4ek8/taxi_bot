@@ -209,18 +209,51 @@ async def taxi_list(msg: types.Message):
 # ---------- MANAGERS ----------
 @dp.message_handler(commands=["add_Man"])
 async def add_manager(msg: types.Message):
+    if not is_manager(msg.from_user.id):
+        await msg.answer("⛔ У тебе немає прав")
+        return
+
+    args = msg.get_args()
+    if not args.isdigit():
+        await msg.answer("❌ Використання: /add_Man <telegram_id>")
+        return
+
+    new_manager_id = int(args)
+
     managers = load_json(MANAGERS_FILE, [])
-    managers.append(msg.from_user.id)
-    save_json(MANAGERS_FILE, list(set(managers)))
-    await msg.answer("✅ Ти менеджер")
+
+    if new_manager_id in managers:
+        await msg.answer("⚠️ Цей користувач вже менеджер")
+        return
+
+    managers.append(new_manager_id)
+    save_json(MANAGERS_FILE, managers)
+
+    await msg.answer(f"✅ Менеджера {new_manager_id} додано")
+
 
 @dp.message_handler(commands=["del_Man"])
 async def del_manager(msg: types.Message):
+    if not is_manager(msg.from_user.id):
+        await msg.answer("⛔ У тебе немає прав")
+        return
+
+    args = msg.get_args()
+    if not args.isdigit():
+        await msg.answer("❌ Використання: /del_Man <telegram_id>")
+        return
+
+    manager_id = int(args)
     managers = load_json(MANAGERS_FILE, [])
-    if msg.from_user.id in managers:
-        managers.remove(msg.from_user.id)
-        save_json(MANAGERS_FILE, managers)
-    await msg.answer("❌ Менеджера видалено")
+
+    if manager_id not in managers:
+        await msg.answer("❌ Цього айді немає серед менеджерів")
+        return
+
+    managers.remove(manager_id)
+    save_json(MANAGERS_FILE, managers)
+
+    await msg.answer(f"🗑 Менеджера {manager_id} видалено")
 
 # ---------- CLEAR TAXI ----------
 @dp.message_handler(commands=["clear"])
@@ -234,6 +267,7 @@ async def clear_taxi(msg: types.Message):
 # ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
