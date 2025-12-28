@@ -93,7 +93,7 @@ async def info(msg: types.Message):
 # ---------- ADD ----------
 @dp.message_handler(commands=["add"])
 async def add_start(msg: types.Message):
-    if not is_manager(msg.from_user.id):
+    if not await check_manager(msg):
         return
     waiting_for_add.add(msg.from_user.id)
     await msg.answer("✍️ Введи прізвища (через кому)")
@@ -273,6 +273,7 @@ async def clear_taxi(msg: types.Message):
 # ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
