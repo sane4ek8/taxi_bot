@@ -57,6 +57,26 @@ def ensure_data_files():
 
 ensure_data_files()
 
+import shutil
+
+def ensure_data_files():
+    os.makedirs("/data", exist_ok=True)
+
+    files = [
+        ("seed/people_storage.json", PEOPLE_STORAGE, {}),
+        ("seed/storage.json", TAXI_STORAGE, {}),
+        ("seed/managers.json", MANAGERS_FILE, [])
+    ]
+
+    for src, dst, default in files:
+        if not os.path.exists(dst):
+            if os.path.exists(src):
+                shutil.copy(src, dst)
+            else:
+                with open(dst, "w", encoding="utf-8") as f:
+                    json.dump(default, f, ensure_ascii=False, indent=2)
+
+
 # ---------- zones ----------
     
 ZONES = {
@@ -298,6 +318,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
