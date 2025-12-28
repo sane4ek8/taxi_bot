@@ -76,11 +76,13 @@ async def info(msg: types.Message):
         "Команди:\n"
         "/add — Додати людей у таксі\n"
         "/del — Видалити людей з таксі\n"
+        "/clear — Очистити список поїздки\n"
         "/list — Всі люди (storage)\n"
         "/taxi — Таксі по зонах\n"
         "/add_Man — Додати менеджера\n"
         "/del_Man — Видалити менеджера"
     )
+
 
 # ---------- ADD ----------
 @dp.message_handler(commands=["add"])
@@ -220,9 +222,19 @@ async def del_manager(msg: types.Message):
         save_json(MANAGERS_FILE, managers)
     await msg.answer("❌ Менеджера видалено")
 
+# ---------- CLEAR TAXI ----------
+@dp.message_handler(commands=["clear"])
+async def clear_taxi(msg: types.Message):
+    if not is_manager(msg.from_user.id):
+        return
+
+    save_json(TAXI_STORAGE, {})
+    await msg.answer("🧹 Список поїздки очищено")
+
 # ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
