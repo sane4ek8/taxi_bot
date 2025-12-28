@@ -37,6 +37,12 @@ async def check_manager(msg: types.Message) -> bool:
         return False
     return True
 
+def ensure_file(path, default):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(default, f, ensure_ascii=False, indent=2)
+
 def ensure_data_files():
     os.makedirs("/data", exist_ok=True)
 
@@ -292,6 +298,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
