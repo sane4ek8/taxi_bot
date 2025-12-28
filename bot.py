@@ -37,6 +37,20 @@ async def check_manager(msg: types.Message) -> bool:
         return False
     return True
 
+def ensure_data_files():
+    os.makedirs("/data", exist_ok=True)
+
+    for path, default in [
+        (PEOPLE_STORAGE, {}),
+        (TAXI_STORAGE, {}),
+        (MANAGERS_FILE, [])
+    ]:
+        if not os.path.exists(path):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(default, f, ensure_ascii=False, indent=2)
+
+ensure_data_files()
+
 # ---------- zones ----------
     
 ZONES = {
@@ -278,6 +292,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
