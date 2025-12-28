@@ -1,27 +1,24 @@
 import os
-import json
-import asyncio
+import logging
+import pandas as pd
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
-from openpyxl import load_workbook
+from aiogram.dispatcher.filters import Command
 
 TOKEN = os.getenv("BOT_TOKEN")
+
+logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-MAN_FILE = "managers.json"
-ADDR_FILE = "addresses.json"
-EXCEL_FILE = "data.xlsx"
-
-user_state = {}
-
+# ====== ЗОНИ ======
 ZONES = {
     1: ["героїв дніпра","мінська","оболонь","почайна","тарса шевченка",
         "контрактова площа","поштова площа","майдан незалежності",
         "площа українських героїв","олімпійська","палац україна",
-        "либідська","академмістечко","житомирська","святошин","нивки",
-        "берестейська","шулявська","політехнічний інститут",
+        "либідська","академмістечко","житомирська","святошин",
+        "нивки","берестейська","шулявська","політехнічний інститут",
         "вокзальна","університет","театральна","хрещатик",
         "арсенальна","дорогожичі","печерськ","сирець"],
 
@@ -32,125 +29,75 @@ ZONES = {
         "дарниця","чернігівська","лісова","троєщина"],
 
     4: ["славутич","осокорки","позняки",
-        "харківська","вирлиця",
-        "бориспільська","червоний хутір"]
+        "харківська","вирлиця","бориспільська","червоний хутір"]
 }
 
-def load_json(file, default):
-    if not os.path.exists(file):
-        return default
-    with open(file, "r", encoding="utf-8") as f:
-        return json.load(f)
+# ====== СХОВИЩА ======
+waiting_for_surname = set()
+rides = {1: [], 2: [], 3: [], 4: []}
 
-def save_json(file, data):
-    with open(file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+# ====== EXCEL ======
+EXCEL_PATH = "data.xlsx"
+df = pd.read_excel(EXCEL_PATH)
 
-def is_manager(user_id):
-    return str(user_id) in load_json(MAN_FILE, [])
+df["surname"] = df["surname"].str.lower().str.strip()
+df["station"] = df["station"].str.lower().str.strip()
 
-def get_zone(station):
-    station = station.lower().strip()
-    for z, sts in ZONES.items():
-        if station in sts:
-            return z
-    return None
-
-def find_person(surname):
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb.active
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[0] and row[0].lower() == surname.lower():
-            return {
-                "surname": row[0],
-                "address": row[1],
-                "station": row[2],
-                "zone": get_zone(row[2])
-            }
-    return None
-
-@dp.message_handler(commands=["start","info"])
+# ====== HELP ======
+@dp.message_handler(Command("info"))
 async def info(msg: types.Message):
     await msg.answer(
         "Бот працює\n\n"
         "/add — додати пасажира\n"
-        "/del — видалити пасажира\n"
         "/list — список по зонах\n"
-        "/add_Man — додати менеджера\n"
-        "/del_Man — видалити менеджера"
+        "/info — команди"
     )
 
-@dp.message_handler(commands=["add"])
-async def add_cmd(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        return await msg.answer("❌ Ти не менеджер")
-    user_state[msg.from_user.id] = "wait_surname"
-    await msg.answer("Введи **прізвище** наступним повідомленням")
+# ====== ADD ======
+@dp.message_handler(Command("add"))
+async def add_start(msg: types.Message):
+    waiting_for_surname.add(msg.from_user.id)
+    await msg.answer("Введи прізвище")
 
-@dp.message_handler()
-async def handle_text(msg: types.Message):
-    uid = msg.from_user.id
-    if user_state.get(uid) != "wait_surname":
+@dp.message_handler(lambda msg: msg.from_user.id in waiting_for_surname)
+async def add_surname(msg: types.Message):
+    surname = msg.text.lower().strip()
+    waiting_for_surname.discard(msg.from_user.id)
+
+    row = df[df["surname"] == surname]
+    if row.empty:
+        await msg.answer("❌ Прізвище не знайдено в Excel")
         return
 
-    person = find_person(msg.text.strip())
-    if not person:
-        return await msg.answer("❌ Прізвище не знайдено в Excel")
+    station = row.iloc[0]["station"]
 
-    data = load_json(ADDR_FILE, [])
-    data.append(person)
-    save_json(ADDR_FILE, data)
+    zone_found = None
+    for zone, stations in ZONES.items():
+        if station in stations:
+            zone_found = zone
+            break
 
-    user_state.pop(uid)
-    await msg.answer(
-        f"✅ Додано:\n{person['surname']}\n"
-        f"{person['address']}\n"
-        f"Метро: {person['station']}\n"
-        f"Зона: {person['zone']}"
-    )
+    if not zone_found:
+        await msg.answer("❌ Не вдалося визначити зону")
+        return
 
-@dp.message_handler(commands=["list"])
-async def list_cmd(msg: types.Message):
-    data = load_json(ADDR_FILE, [])
-    if not data:
-        return await msg.answer("Список порожній")
+    rides[zone_found].append(row.iloc[0]["surname"].title())
+    await msg.answer(f"✅ Додано в зону {zone_found}")
 
+# ====== LIST ======
+@dp.message_handler(Command("list"))
+async def show_list(msg: types.Message):
     text = ""
-    for z in range(1,5):
-        group = [d for d in data if d["zone"] == z]
-        if group:
-            text += f"\n🚕 Зона {z}:\n"
-            for p in group:
-                text += f"- {p['surname']} | {p['address']}\n"
+    for zone, people in rides.items():
+        text += f"\nЗона {zone}:\n"
+        if people:
+            for p in people:
+                text += f" - {p}\n"
+        else:
+            text += " (порожньо)\n"
+
     await msg.answer(text)
 
-@dp.message_handler(commands=["del"])
-async def del_cmd(msg: types.Message):
-    if not is_manager(msg.from_user.id):
-        return
-    user_state[msg.from_user.id] = "del"
-    await msg.answer("Введи прізвище для видалення")
-
-@dp.message_handler(commands=["add_Man"])
-async def add_man(msg: types.Message):
-    ids = load_json(MAN_FILE, [])
-    parts = msg.text.split()
-    if len(parts) != 2:
-        return await msg.answer("/add_Man ID")
-    ids.append(parts[1])
-    save_json(MAN_FILE, ids)
-    await msg.answer("✅ Менеджер доданий")
-
-@dp.message_handler(commands=["del_Man"])
-async def del_man(msg: types.Message):
-    ids = load_json(MAN_FILE, [])
-    parts = msg.text.split()
-    if len(parts) != 2:
-        return await msg.answer("/del_Man ID")
-    if parts[1] in ids:
-        ids.remove(parts[1])
-        save_json(MAN_FILE, ids)
-    await msg.answer("✅ Менеджер видалений")
-
+# ====== START ======
 if __name__ == "__main__":
-    executor.start_polling(dp)
+    executor.start_polling(dp, skip_updates=True)
