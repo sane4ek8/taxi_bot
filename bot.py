@@ -1,7 +1,7 @@
 import json
 import os
-import re
 from aiogram import Bot, Dispatcher, executor, types
+import pandas as pd
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -10,6 +10,9 @@ dp = Dispatcher(bot)
 
 DATA_FILE = "data.json"
 MAN_FILE = "managers.json"
+PEOPLE_FILE = "people.xlsx"
+
+waiting_for_surname = set()
 
 # ---------- utils ----------
 def load_json(path, default):
@@ -29,7 +32,7 @@ def is_manager(user_id):
 # ---------- zones ----------
 ZONES = {
     1: {"stations": [
-        "академмістечко", "житомирська", "святошин", "ниивки",
+        "академмістечко", "житомирська", "святошин", "нивки",
         "берестейська", "шулявська", "політехнічний інститут",
         "вокзальна", "університет", "театральна",
         "хрещатик", "арсенальна"
@@ -67,8 +70,7 @@ async def info(msg: types.Message):
     await msg.answer(
         "🤖 Бот працює\n\n"
         "Команди:\n"
-        "/add — Додавання адреси\n"
-        "/del — Видалення адреси\n"
+        "/add — Додавання людини\n"
         "/list — Список адрес\n"
         "/add_Man — Додати менеджера\n"
         "/del_Man — Видалити менеджера\n"
@@ -76,55 +78,66 @@ async def info(msg: types.Message):
     )
 
 @dp.message_handler(commands=["add"])
-async def add_hint(msg: types.Message):
+async def add_start(msg: types.Message):
     if not is_manager(msg.from_user.id):
         return
+    waiting_for_surname.add(msg.from_user.id)
     await msg.answer(
-        "✍️ Введи адресу у форматі:\n"
-        "Імʼя - адреса (станція метро)\n\n"
+        "✍️ Введи прізвище (як в Excel)\n"
         "Можна кілька через кому:\n"
-        "Іванов - вул. Х (Позняки), Петров - вул. Y (Лісова)"
+        "Головко, Іванов, Петров"
     )
 
-# ---------- ADD (підтримка кількох записів) ----------
-@dp.message_handler(lambda m: "-" in m.text and "(" in m.text and ")" in m.text)
-async def handle_add(msg: types.Message):
-    if not is_manager(msg.from_user.id):
+# ---------- SURNAME HANDLER (MULTI) ----------
+@dp.message_handler(lambda m: m.from_user.id in waiting_for_surname)
+async def handle_surname(msg: types.Message):
+    waiting_for_surname.discard(msg.from_user.id)
+
+    if not os.path.exists(PEOPLE_FILE):
+        await msg.answer("❌ Файл people.xlsx не знайдено")
         return
 
-    entries = [e.strip() for e in msg.text.split(",") if e.strip()]
+    df = pd.read_excel(PEOPLE_FILE)
+    df["surname"] = df["surname"].astype(str).str.lower()
+
+    surnames = [s.strip().lower() for s in msg.text.split(",") if s.strip()]
 
     data = load_json(DATA_FILE, {})
     added = []
-    errors = []
+    not_found = []
+    no_zone = []
 
-    for entry in entries:
-        try:
-            name, rest = entry.split("-", 1)
-            address, station = re.findall(r"(.*)\((.*)\)", rest)[0]
-        except:
-            errors.append(entry)
+    for surname in surnames:
+        row = df[df["surname"] == surname]
+
+        if row.empty:
+            not_found.append(surname)
             continue
 
-        zone = detect_zone(station.strip())
+        person = row.iloc[0]
+        station = str(person["station"]).strip()
+        zone = detect_zone(station)
+
         if not zone:
-            errors.append(entry)
+            no_zone.append(person["surname"])
             continue
 
         data.setdefault(str(zone), []).append({
-            "name": name.strip(),
-            "address": address.strip(),
-            "station": station.strip()
+            "name": person["surname"],
+            "address": person["address"],
+            "station": station
         })
-        added.append(f"{name.strip()} → зона {zone}")
+        added.append(f"{person['surname']} → зона {zone}")
 
     save_json(DATA_FILE, data)
 
     text = ""
     if added:
         text += "✅ Додано:\n" + "\n".join(added) + "\n\n"
-    if errors:
-        text += "❌ Помилка формату або зона не знайдена:\n" + "\n".join(errors)
+    if not_found:
+        text += "❌ Не знайдено в Excel:\n" + ", ".join(not_found) + "\n\n"
+    if no_zone:
+        text += "⚠️ Не визначена зона:\n" + ", ".join(no_zone)
 
     await msg.answer(text.strip())
 
