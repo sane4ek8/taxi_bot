@@ -30,6 +30,12 @@ def is_manager(user_id):
     managers = load_json(MANAGERS_FILE, [])
     return user_id in managers
 
+async def check_manager(msg: types.Message) -> bool:
+    if not is_manager(msg.from_user.id):
+        await msg.answer("⛔ У тебе немає прав")
+        return False
+    return True
+
 # ---------- zones ----------
 ZONES = {
     1: {"stations": [
@@ -267,6 +273,7 @@ async def clear_taxi(msg: types.Message):
 # ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
