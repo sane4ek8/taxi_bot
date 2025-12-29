@@ -6,7 +6,7 @@ from config import (
     PEOPLE_STORAGE,
     TAXI_STORAGE,
     MANAGERS_FILE,
-    MAX_IN_CAR
+    MAX_IN_CAR,
     SUPER_ADMIN_ID
 )
 
@@ -319,6 +319,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
