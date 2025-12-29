@@ -133,11 +133,11 @@ async def info(msg: types.Message):
         reply_markup=main_kb
     )
     
-@dp.message_handler(text="✅ Додати людей")
+@dp.message_handler(text="✅ Додати в таксі")
 async def kb_add(msg: types.Message):
     await add_start(msg)
 
-@dp.message_handler(text="🚫 Видалити людей")
+@dp.message_handler(text="🚫 Видалити з таксі")
 async def kb_del(msg: types.Message):
     await del_start(msg)
 
@@ -368,6 +368,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
