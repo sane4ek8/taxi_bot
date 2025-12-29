@@ -13,6 +13,30 @@ from config import (
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+
+main_kb.add(
+    KeyboardButton("➕ Додати людей"),
+    KeyboardButton("➖ Видалити людей")
+)
+
+main_kb.add(
+    KeyboardButton("📋 Список людей"),
+    KeyboardButton("🚕 Таксі")
+)
+
+main_kb.add(
+    KeyboardButton("🧹 Очистити поїздку")
+)
+
+main_kb.add(
+    KeyboardButton("➕➕ Додати менеджера"),
+    KeyboardButton("➖➖ Видалити менеджера")
+)
+
+
 waiting_for_add = set()
 waiting_for_del = set()
 waiting_for_add_manager = set()
@@ -106,17 +130,43 @@ def detect_zone(station):
 @dp.message_handler(commands=["start", "info"])
 async def info(msg: types.Message):
     await msg.answer(
-        "🤖 Бот працює\n\n"
-        "Команди:\n"
-        "/add — Додати людей у таксі\n"
-        "/del — Видалити людей з таксі\n"
-        "/clear — Очистити список поїздки\n"
-        "/list — Всі люди (storage)\n"
-        "/taxi — Таксі по зонах\n"
-        "/add_Man — Додати менеджера\n"
-        "/del_Man — Видалити менеджера"
+        "🤖 Бот працює\n\nОбери дію кнопками нижче ⬇️",
+        reply_markup=main_kb
     )
+    
+@dp.message_handler(text="➕ Додати людей")
+async def kb_add(msg: types.Message):
+    await add_start(msg)
 
+@dp.message_handler(text="➖ Видалити людей")
+async def kb_del(msg: types.Message):
+    await del_start(msg)
+
+@dp.message_handler(text="📋 Список людей")
+async def kb_list(msg: types.Message):
+    await list_people(msg)
+
+@dp.message_handler(text="🚕 Таксі")
+async def kb_taxi(msg: types.Message):
+    await taxi_list(msg)
+
+@dp.message_handler(text="🧹 Очистити поїздку")
+async def kb_clear(msg: types.Message):
+    await clear_taxi(msg)
+
+@dp.message_handler(text="➕➕ Додати менеджера")
+async def kb_add_man(msg: types.Message):
+    if not await check_super_admin(msg):
+        return
+    waiting_for_add_manager.add(msg.from_user.id)
+    await msg.answer("✍️ Введи telegram ID менеджера")
+
+@dp.message_handler(text="➖➖ Видалити менеджера")
+async def kb_del_man(msg: types.Message):
+    if not await check_super_admin(msg):
+        return
+    waiting_for_del_man.add(msg.from_user.id)
+    await msg.answer("✍️ Введи telegram ID менеджера для видалення")
 
 # ---------- ADD ----------
 
@@ -319,6 +369,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
