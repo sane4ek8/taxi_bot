@@ -18,8 +18,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
 main_kb.add(
-    KeyboardButton("➕ Додати людей"),
-    KeyboardButton("➖ Видалити людей")
+    KeyboardButton("✅ Додати в таксі"),
+    KeyboardButton("🚫 Видалити з таксі")
 )
 
 main_kb.add(
@@ -32,8 +32,8 @@ main_kb.add(
 )
 
 main_kb.add(
-    KeyboardButton("➕➕ Додати менеджера"),
-    KeyboardButton("➖➖ Видалити менеджера")
+    KeyboardButton("👤✅ Додати менеджера"),
+    KeyboardButton("👤🚫 Видалити менеджера")
 )
 
 
@@ -134,11 +134,11 @@ async def info(msg: types.Message):
         reply_markup=main_kb
     )
     
-@dp.message_handler(text="➕ Додати людей")
+@dp.message_handler(text="✅ Додати людей")
 async def kb_add(msg: types.Message):
     await add_start(msg)
 
-@dp.message_handler(text="➖ Видалити людей")
+@dp.message_handler(text="🚫 Видалити людей")
 async def kb_del(msg: types.Message):
     await del_start(msg)
 
@@ -154,14 +154,14 @@ async def kb_taxi(msg: types.Message):
 async def kb_clear(msg: types.Message):
     await clear_taxi(msg)
 
-@dp.message_handler(text="➕➕ Додати менеджера")
+@dp.message_handler(text="👤✅ Додати менеджера")
 async def kb_add_man(msg: types.Message):
     if not await check_super_admin(msg):
         return
     waiting_for_add_manager.add(msg.from_user.id)
     await msg.answer("✍️ Введи telegram ID менеджера")
 
-@dp.message_handler(text="➖➖ Видалити менеджера")
+@dp.message_handler(text="👤🚫 Видалити менеджера")
 async def kb_del_man(msg: types.Message):
     if not await check_super_admin(msg):
         return
@@ -369,6 +369,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
