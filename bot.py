@@ -36,7 +36,6 @@ main_kb.add(
     KeyboardButton("👤🚫 Видалити менеджера")
 )
 
-
 waiting_for_add = set()
 waiting_for_del = set()
 waiting_for_add_manager = set()
@@ -299,12 +298,10 @@ async def taxi_list(msg: types.Message):
 @dp.message_handler(commands=["add_Man"])
 async def add_man_start(msg: types.Message):
     if not is_super_admin(msg.from_user.id):
-        await msg.answer("⛔ Тільки супер-адмін може керувати менеджерами")
+        await msg.answer("⛔ Тільки супер-адмін може додавати менеджерів")
         return
-
     waiting_for_add_manager.add(msg.from_user.id)
     await msg.answer("✍️ Введи telegram ID нового менеджера")
-
 
 @dp.message_handler(lambda m: m.from_user.id in waiting_for_add_manager)
 async def add_man_process(msg: types.Message):
@@ -323,7 +320,8 @@ async def add_man_process(msg: types.Message):
 
     managers.append(new_manager_id)
     save_json(MANAGERS_FILE, managers)
-    await msg.answer(f"✅ Менеджера {new_manager_id} додано")
+
+    await msg.answer(f"🟩 Менеджера {new_manager_id} додано")
 
 
 @dp.message_handler(commands=["del_Man"])
@@ -331,13 +329,12 @@ async def del_man_start(msg: types.Message):
     if not is_super_admin(msg.from_user.id):
         await msg.answer("⛔ Тільки супер-адмін може видаляти менеджерів")
         return
-
-    waiting_for_del_man.add(msg.from_user.id)
+    waiting_for_del_manager.add(msg.from_user.id)
     await msg.answer("🗑 Введи telegram ID менеджера для видалення")
-
-@dp.message_handler(lambda m: m.from_user.id in waiting_for_del_man)
+    
+@dp.message_handler(lambda m: m.from_user.id in waiting_for_del_manager)
 async def del_man_process(msg: types.Message):
-    waiting_for_del_man.discard(msg.from_user.id)
+    waiting_for_del_manager.discard(msg.from_user.id)
 
     if not msg.text.isdigit():
         await msg.answer("❌ Потрібно ввести числовий telegram ID")
@@ -353,7 +350,7 @@ async def del_man_process(msg: types.Message):
     managers.remove(manager_id)
     save_json(MANAGERS_FILE, managers)
 
-    await msg.answer(f"🗑 Менеджера {manager_id} видалено")
+    await msg.answer(f"🟥 Менеджера {manager_id} видалено")
 
 # ---------- CLEAR TAXI ----------
 
@@ -369,6 +366,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
