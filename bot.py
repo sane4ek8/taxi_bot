@@ -39,7 +39,7 @@ main_kb.add(
 waiting_for_add = set()
 waiting_for_del = set()
 waiting_for_add_manager = set()
-waiting_for_del_man = set()
+waiting_for_del_manager = set()
 
 # ---------- utils ----------
 import shutil
@@ -153,19 +153,21 @@ async def kb_taxi(msg: types.Message):
 async def kb_clear(msg: types.Message):
     await clear_taxi(msg)
 
-@dp.message_handler(text="👤✅ Додати менеджера")
-async def kb_add_man(msg: types.Message):
-    if not await check_super_admin(msg):
+@dp.message_handler(lambda m: m.text == "👤✅ Додати менеджера")
+async def add_manager_start(msg: types.Message):
+    if not is_super_admin(msg.from_user.id):
+        await msg.answer("⛔ Тільки супер-адмін може додавати менеджерів")
         return
     waiting_for_add_manager.add(msg.from_user.id)
     await msg.answer("✍️ Введи telegram ID менеджера")
 
-@dp.message_handler(text="👤🚫 Видалити менеджера")
-async def kb_del_man(msg: types.Message):
-    if not await check_super_admin(msg):
+@dp.message_handler(lambda m: m.text == "👤🚫 Видалити менеджера")
+async def del_manager_start(msg: types.Message):
+    if not is_super_admin(msg.from_user.id):
+        await msg.answer("⛔ Тільки супер-адмін може видаляти менеджерів")
         return
-    waiting_for_del_man.add(msg.from_user.id)
-    await msg.answer("✍️ Введи telegram ID менеджера для видалення")
+    waiting_for_del_manager.add(msg.from_user.id)
+    await msg.answer("🗑 Введи telegram ID менеджера для видалення")
 
 # ---------- ADD ----------
 
@@ -366,6 +368,7 @@ async def clear_taxi(msg: types.Message):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
 
 
 
